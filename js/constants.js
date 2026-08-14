@@ -21,6 +21,12 @@ function isAdminEmail(email) {
   return ADMIN_EMAILS.includes((email || "").toLowerCase());
 }
 
+// How long a user's last position update is trusted as "their GPS is on".
+// Past this age with no fresh update — they turned location off, walked out
+// of range, closed the tab, lost signal, whatever — their pin vanishes from
+// everyone else's map instead of sitting there stale forever.
+const PIN_STALE_MS = 45 * 1000; // 45s
+
 const BRANCHES = [
   "B.Tech. - Computer Science & Engineering",
   "B.Tech. - Artificial Intelligence & Machine Learning",

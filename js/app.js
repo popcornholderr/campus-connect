@@ -507,7 +507,6 @@ function wireGps() {
 let firstFixReceived = false;
 let locationTrackingStarted = false;
 let demoFallbackTimer = null;
-let gpsOffTimer = null; // debounce before we treat GPS errors as "turned off"
 
 function startLocationTracking() {
   // Guard against wiring this up more than once (e.g. the person backs
@@ -527,33 +526,26 @@ function startLocationTracking() {
 
   Geo.onUpdate(async (fix) => {
     if (fix.error) {
-      // Real GPS had already been reporting successfully and just started
-      // erroring — that's the device's location/GPS getting turned off
-      // mid-session, not a one-off hiccup. Debounce for a couple seconds
-      // first (a single dropped fix from a weak signal shouldn't be
-      // enough to yank the pin), and only mark location as off if the
-      // errors keep coming past that window.
-      if (Geo.usingRealGps) {
-        if (!gpsOffTimer) gpsOffTimer = setTimeout(() => { gpsOffTimer = null; markLocationOff(); }, 2500);
-        return;
-      }
-      // Never had real GPS to begin with (e.g. testing on desktop, no
-      // hardware, permission dialog dismissed). Fall back to a simulated
-      // on-campus walk so the app is still demoable.
+      // Permission denied or unsupported (e.g. testing on desktop, off-campus).
+      // Fall back to a simulated on-campus walk so the app is still demoable.
       if (!firstFixReceived) {
         toast("Location unavailable — showing a demo position instead");
         Geo.startDemoWalk();
+        return;
       }
-      return;
-    }
-    // A real or demo fix landed — GPS is (still) on. Cancel any pending
-    // "just turned off" mark and, if we'd already flagged it off, flip
-    // it back on now that fixes are flowing again.
-    clearTimeout(gpsOffTimer);
-    gpsOffTimer = null;
-    if (App.me && App.me.locationOn === false) {
-      App.me.locationOn = true;
+      // We'd already been getting real fixes and now the browser is
+      // reporting an error (permission revoked mid-session, GPS signal
+      // lost, location toggled off in the OS) — don't just silently keep
+      // showing the last position as if it were still live. Mark this
+      // device inactive so our own pin vanishes from the map for everyone,
+      // same as anyone else whose GPS drops.
+      if (!App.me) return;
+      firstFixReceived = false;
+      await Store.setActive(App.me.id, false);
+      App.me.active = false;
       renderMapPins();
+      toast("Location signal lost — your pin is hidden until it's back");
+      return;
     }
     // A real fix landed — make sure it's the only thing driving the pin.
     clearTimeout(demoFallbackTimer);
@@ -578,21 +570,6 @@ function startLocationTracking() {
   }, 4000);
 }
 
-/** Called once GPS errors have persisted past the debounce window in the
- *  Geo.onUpdate handler above — i.e. the device's location just got
- *  turned off after previously working. Hides this user's own pin (for
- *  everyone, not just locally) until a real fix lands again. */
-async function markLocationOff() {
-  if (!App.me || App.me.locationOn === false) return; // already off / not signed in
-  App.me.locationOn = false;
-  renderMapPins();
-  toast("Location turned off — your pin is hidden until it's back on");
-  if (typeof Store.updateLocationStatus === "function") {
-    try { await Store.updateLocationStatus(App.me.id, false); }
-    catch (err) { console.error("updateLocationStatus failed:", err); }
-  }
-}
-
 let hasCenteredOnUser = false;
 
 async function handleFix(fix) {
@@ -604,10 +581,21 @@ async function handleFix(fix) {
   const isAdmin = isAdminEmail(App.me.email);
   const inside = isAdmin || fix.inside !== false;
   $("#oob-screen").classList.toggle("show", !inside);
-  if (!inside) return;
+  if (!inside) {
+    // Walked outside the campus geofence — we don't know their position
+    // relative to the map anymore, so pull their pin instead of leaving it
+    // sitting at the last spot inside campus.
+    if (App.me.active !== false) {
+      App.me.active = false;
+      await Store.setActive(App.me.id, false);
+      renderMapPins();
+    }
+    return;
+  }
 
   App.me.pos = { x: fix.nx, y: fix.ny };
-  await Store.updatePosition(App.me.id, App.me.pos);
+  await Store.updatePosition(App.me.id, App.me.pos); // also flips active back to true
+  App.me.active = true;
   renderMapPins();
 
   // First time we get a real location, snap the view to it and zoom in —
@@ -631,6 +619,7 @@ function enterMapFirstTime() {
   if (!MapView.el) MapView.init($("#map-canvas"), $("#map-scroll"));
   else { MapView._sizeCanvas(); MapView._clampAndApply(); }
   renderMapPins();
+  startStaleGpsWatch();
 
   if (typeof Store.subscribeUsers === "function") {
     // Real backend mode: real students' pins update live as their position
@@ -1055,6 +1044,20 @@ const MapView = {
   },
 };
 
+let staleGpsWatchStarted = false;
+/** Nobody pushes us an update the instant a pin goes stale — a device that
+ *  simply stops sending fixes (backgrounded, killed, lost signal) never
+ *  triggers a re-render on its own. So we re-check on a timer too, purely
+ *  to age stale pins out; anything actually still live just keeps passing
+ *  the PIN_STALE_MS check in renderMapPins() and stays put. */
+function startStaleGpsWatch() {
+  if (staleGpsWatchStarted) return;
+  staleGpsWatchStarted = true;
+  setInterval(() => {
+    if (App.activeTab === "map") renderMapPins();
+  }, 10000);
+}
+
 async function renderMapPins() {
   if (!App.me) return; // not signed in / not ready yet — nothing to render
   const canvas = $("#map-canvas");
@@ -1069,13 +1072,16 @@ async function renderMapPins() {
   // ensure "me" (latest live doc) is represented
   visible = visible.filter((u) => u.id !== App.me.id);
   visible.push(App.me);
-  visible = visible.filter((u) => u.pos);
-  // A pin only ever shows for a user while their device's GPS/location is
-  // actually on (locationOn defaults to true — see store.js/store.supabase.js).
-  // This applies to everyone, including "me": if my own location just got
-  // turned off, my own pin disappears for me too, same as it would for
-  // anyone else looking at the map.
-  visible = visible.filter((u) => u.locationOn !== false);
+  // Only show a pin once that person actually has a live position AND is
+  // marked active — i.e. their GPS/location sharing is currently on — AND
+  // that position isn't stale. "active" alone isn't enough: a device can
+  // go dark (tab closed, GPS killed by the OS, network dropped) without
+  // ever getting the chance to flip its own flag off, so we also age out
+  // anyone whose last update is older than PIN_STALE_MS. Covers: they
+  // turned location off, walked out of the map's range, or the app simply
+  // lost track of whether their GPS is still on.
+  const now = Date.now();
+  visible = visible.filter((u) => u.pos && u.active && now - (u.lastSeen || 0) < PIN_STALE_MS);
 
   // Reuse existing pin elements keyed by user id instead of wiping and
   // rebuilding every pin on every update. Recreating the DOM node each

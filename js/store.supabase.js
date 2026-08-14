@@ -76,7 +76,6 @@ function rowToUser(r) {
     branch: r.branch, semester: r.semester || 1, placeType: r.place_type || "hostel",
     place: r.place || "", relationship: r.relationship || "", phone: r.phone || "",
     social: r.social || "", pos: r.pos || { x: 0.35, y: 0.55 }, active: r.active !== false,
-    locationOn: r.location_on !== false,
     onboarded: !!r.onboarded, lastSeen: r.last_seen || Date.now(),
     friends: r.friends || [], blocked: r.blocked || [],
   };
@@ -88,8 +87,7 @@ function userToRow(u) {
     photo: u.photo || null, age: u.age || null, branch: u.branch,
     semester: u.semester || 1, place_type: u.placeType || "hostel", place: u.place || "",
     relationship: u.relationship || "", phone: u.phone || "", social: u.social || "",
-    pos: u.pos || { x: 0.35, y: 0.55 }, active: u.active !== false,
-    location_on: u.locationOn !== false, onboarded: !!u.onboarded,
+    pos: u.pos || { x: 0.35, y: 0.55 }, active: u.active !== false, onboarded: !!u.onboarded,
     last_seen: u.lastSeen || Date.now(), friends: u.friends || [], blocked: u.blocked || [],
   };
 }
@@ -169,16 +167,15 @@ const Store = {
   },
 
   async updatePosition(id, pos) {
-    // A fresh fix landing means GPS is (still) on — clear any earlier
-    // location_on: false so the pin reappears the moment tracking resumes.
-    await sb.from("users").update({ pos, active: true, location_on: true, last_seen: Date.now() }).eq("id", id);
+    await sb.from("users").update({ pos, active: true, last_seen: Date.now() }).eq("id", id);
   },
-
-  /** Flip whether this user's device currently has GPS/location on. The
-   *  map only renders a pin for a user while this is true — see
-   *  renderMapPins() in app.js. */
-  async updateLocationStatus(id, isOn) {
-    await sb.from("users").update({ location_on: isOn }).eq("id", id);
+  /** Flip a user's "GPS is on" flag directly, without moving their pin.
+   *  Used to immediately vanish a pin the moment we know location sharing
+   *  stopped (permission revoked, walked out of the campus geofence, tab
+   *  backgrounded/closed) instead of waiting for the pin to go stale. */
+  async setActive(id, active) {
+    const patch = active ? { active: true, last_seen: Date.now() } : { active: false };
+    await sb.from("users").update(patch).eq("id", id);
   },
 
   async toggleFriend(userId, targetId) {

@@ -55,7 +55,6 @@ function seedDemoStudents() {
       social: "",
       pos: spots[i],
       active: i % 3 !== 0, // most are "active"
-      locationOn: true, // demo students always have "GPS" on
       lastSeen: Date.now() - i * 60000,
     };
   });
@@ -119,19 +118,19 @@ const Store = {
     if (db.users[id]) {
       db.users[id].pos = pos;
       db.users[id].active = true;
-      db.users[id].locationOn = true; // a fresh fix means GPS is on
       db.users[id].lastSeen = Date.now();
       this._write(db);
     }
   },
-
-  /** Flip whether this user's device currently has GPS/location on. The
-   *  map only renders a pin for a user while this is true — see
-   *  renderMapPins() in app.js. */
-  async updateLocationStatus(id, isOn) {
+  /** Flip a user's "GPS is on" flag directly, without moving their pin.
+   *  Used to immediately vanish a pin the moment we know location sharing
+   *  stopped (permission revoked, walked out of the campus geofence, tab
+   *  backgrounded/closed) instead of waiting for the pin to go stale. */
+  async setActive(id, active) {
     const db = this._read();
     if (db.users[id]) {
-      db.users[id].locationOn = isOn;
+      db.users[id].active = active;
+      if (active) db.users[id].lastSeen = Date.now();
       this._write(db);
     }
   },
@@ -219,7 +218,7 @@ const Auth = {
         name: "", username: "", photo: null, age: "", branch: BRANCHES[0],
         semester: 1, placeType: "hostel", place: "", relationship: "",
         phone: "", social: "", pos: { x: 0.35, y: 0.55 }, active: true,
-        locationOn: true, onboarded: false, lastSeen: Date.now(),
+        onboarded: false, lastSeen: Date.now(),
       };
       await Store.saveUser(user);
     }

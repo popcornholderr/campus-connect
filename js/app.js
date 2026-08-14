@@ -636,6 +636,14 @@ function wireMap() {
 
   $("#btn-edit-friends").addEventListener("click", openFriendsModal);
 
+  $("#btn-locate-me").addEventListener("click", () => {
+    if (!App.me || !App.me.pos) { toast("Still finding your location…"); return; }
+    closeInfoCard();
+    // Focus-zoom in on your own pin, same idea as the very first
+    // auto-center on GPS lock — but callable any time, not just once.
+    MapView.centerOn(App.me.pos.x, App.me.pos.y, Math.max(MapView.zoom, 3), true);
+  });
+
   const search = $("#map-search");
   search.addEventListener("input", async () => {
     const q = search.value.trim().toLowerCase();
@@ -712,8 +720,21 @@ const MapView = {
   },
 
   _sizeCanvas() {
-    const vw = this.scrollEl.clientWidth || 1;
-    const vh = this.scrollEl.clientHeight || 1;
+    // Guard against sizing the canvas to (near) zero: #map-scroll reports
+    // clientWidth/clientHeight of 0 whenever the map screen itself is
+    // hidden (display:none, e.g. while you're on the Comments/Likes/
+    // Profile tab). The old `|| 1` fallback let that 0 silently through as
+    // a valid 1px viewport, which shrank the whole map canvas down to
+    // ~1px — so switching back to the map showed nothing but the green
+    // frame background behind the (now microscopic) map. This was most
+    // reproducible after opening the keyboard on another tab (e.g. the
+    // Comments search box), which fires a window "resize" event that used
+    // to re-run this while the map was still hidden. Skipping the resize
+    // entirely while hidden — and switchTab() forcing a fresh one when you
+    // come back to "map" (see below) — fixes it at both ends.
+    if (!this.scrollEl || this.scrollEl.clientWidth === 0 || this.scrollEl.clientHeight === 0) return;
+    const vw = this.scrollEl.clientWidth;
+    const vh = this.scrollEl.clientHeight;
     const aspect = (typeof CAMPUS_CONFIG !== "undefined" && CAMPUS_CONFIG.mapAspect) || (16 / 9);
     // "Cover" fit at zoom=1: base canvas always fully fills the viewport,
     // same idea as CSS background-size:cover, so there's never an empty
@@ -1370,7 +1391,14 @@ async function switchTab(tab) {
   App.activeTab = tab;
   $all("#bottom-nav button").forEach((b) => b.classList.toggle("active", b.dataset.tab === tab));
   goTo("screen-" + tab);
-  if (tab === "map") renderMapPins();
+  if (tab === "map") {
+    // Force a fresh size/clamp on every return to the map, not just
+    // renderMapPins() — self-heals even if something odd happened to
+    // MapView's dimensions while this tab was hidden (see the guard in
+    // _sizeCanvas for the actual root-cause fix).
+    if (MapView.el) { MapView._sizeCanvas(); MapView._clampAndApply(); }
+    renderMapPins();
+  }
   if (tab === "comments") { await Store.markTabSeen("comments"); renderCommentsList(); }
   if (tab === "likes") { await Store.markTabSeen("likes"); renderLikesList(); }
   if (tab === "profile") renderMyProfile();

@@ -54,7 +54,24 @@ const Geo = {
     const dLat = (latitude - this._smoothLat) * 111320;
     const dLon = (longitude - this._smoothLon) * 111320 * Math.cos((latitude * Math.PI) / 180);
     const distMeters = Math.hypot(dLat, dLon);
-    const alpha = distMeters > acc ? 0.95 : Math.min(0.4, Math.max(0.12, 10 / acc));
+
+    // STILLNESS DEAD-ZONE: a phone's GPS chip reports a *new* lat/lon on
+    // every fix even standing dead still — typically wobbling a few
+    // metres in a random direction each time. That's a hardware/satellite-
+    // geometry limit (multipath reflections, atmospheric delay, receiver
+    // noise); no app-side code can make consumer GPS report a fixed point
+    // to zero error. What we CAN do is stop chasing that wobble: if the
+    // new fix falls well within its own reported accuracy radius of where
+    // we already think you are, treat it as noise around a stationary
+    // point and don't move at all — rather than the old behaviour of
+    // always nudging toward it (alpha floor of 0.12), which is exactly
+    // what read as "I'm steady but it keeps moving".
+    const stillRadius = Math.max(3, acc * 0.5);
+    if (distMeters < stillRadius) {
+      return { lat: this._smoothLat, lon: this._smoothLon };
+    }
+
+    const alpha = distMeters > acc ? 0.95 : Math.min(0.4, Math.max(0.15, 10 / acc));
     this._smoothLat += (latitude - this._smoothLat) * alpha;
     this._smoothLon += (longitude - this._smoothLon) * alpha;
     return { lat: this._smoothLat, lon: this._smoothLon };
@@ -74,6 +91,14 @@ const Geo = {
     this.watchId = navigator.geolocation.watchPosition(
       (pos) => {
         const { latitude, longitude, accuracy } = pos.coords;
+        // Reject wildly inaccurate fixes outright instead of feeding them
+        // into the smoother. A single fix with e.g. 150m accuracy (the
+        // chip briefly falling back to WiFi/cell-tower positioning) can
+        // look like "real movement" to the distance-vs-accuracy check in
+        // _smooth() and teleport the dot before snapping back on the next
+        // good fix. Once we have an established position, ignore anything
+        // worse than 60m accuracy entirely rather than acting on it.
+        if (typeof accuracy === "number" && accuracy > 60 && this._smoothLat !== null) return;
         const smoothed = this._smooth(latitude, longitude, accuracy);
         const inside = isInsideCampus(smoothed.lat, smoothed.lon);
         const img = geoToImage(smoothed.lat, smoothed.lon);

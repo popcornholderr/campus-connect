@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Region Mapper — calibration helper</title>
+<style>
+  body { margin:0; font-family: -apple-system, sans-serif; background:#1a1a1a; color:#eee; }
+  #wrap { display:flex; }
+  #map-side { position:relative; overflow:auto; width:75vw; height:100vh; }
+  #map-side img { display:block; width:180%; max-width:none; cursor: crosshair; }
+  .marker { position:absolute; width:10px; height:10px; margin:-5px; border-radius:50%; background:#ff3b30; border:2px solid #fff; }
+  .marker-label { position:absolute; transform: translate(6px, -8px); background:#000; color:#fff; font-size:11px; padding:2px 5px; border-radius:4px; white-space:nowrap; }
+  #panel { width:25vw; height:100vh; overflow-y:auto; padding:16px; box-sizing:border-box; background:#111; }
+  #panel h2 { font-size:15px; }
+  #panel p { font-size:12px; color:#aaa; line-height:1.5; }
+  #panel input { width:100%; padding:8px; margin-bottom:8px; box-sizing:border-box; background:#222; border:1px solid #444; color:#fff; border-radius:6px; }
+  #panel button { width:100%; padding:9px; margin-bottom:16px; background:#3a7dff; border:none; color:#fff; border-radius:6px; cursor:pointer; font-weight:700; }
+  #list { font-size:11px; }
+  #list .row { display:flex; justify-content:space-between; padding:5px 0; border-bottom:1px solid #333; }
+  #list .row button { width:auto; padding:2px 6px; margin:0; background:#552; font-size:10px; }
+  textarea { width:100%; height:160px; background:#222; color:#0f0; font-size:10px; font-family:monospace; border:1px solid #444; border-radius:6px; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="map-side">
+    <img id="map-img" src="../assets/campus-map.jpg" />
+  </div>
+  <div id="panel">
+    <h2>Region Mapper</h2>
+    <p>Click any spot on the map to drop a pin, name the region, hit Save. This writes exact normalized coordinates you can paste into <code>assets/regions.json</code> to replace the AI's rough estimates with pixel-perfect ones.</p>
+    <input id="name-input" placeholder="Region name, e.g. 'A-block'" />
+    <button id="save-btn">Save last click as this name</button>
+    <div id="list"></div>
+    <h2>Export JSON</h2>
+    <textarea id="export-box" readonly></textarea>
+  </div>
+</div>
+<script>
+  let pending = null;
+  let regions = JSON.parse(localStorage.getItem('region_mapper_points') || '[]');
+
+  const img = document.getElementById('map-img');
+  const mapSide = document.getElementById('map-side');
+
+  function render() {
+    document.querySelectorAll('.marker,.marker-label').forEach(e => e.remove());
+    regions.forEach(r => {
+      const m = document.createElement('div');
+      m.className = 'marker';
+      m.style.left = (r.x * 100) + '%';
+      m.style.top = (r.y * 100) + '%';
+      mapSide.appendChild(m);
+      const l = document.createElement('div');
+      l.className = 'marker-label';
+      l.style.left = (r.x * 100) + '%';
+      l.style.top = (r.y * 100) + '%';
+      l.textContent = r.name;
+      mapSide.appendChild(l);
+    });
+    document.getElementById('list').innerHTML = regions.map((r,i) => `
+      <div class="row"><span>${r.name} (${r.x.toFixed(3)}, ${r.y.toFixed(3)})</span><button onclick="removeRegion(${i})">x</button></div>
+    `).join('');
+    document.getElementById('export-box').value = JSON.stringify(regions, null, 2);
+    localStorage.setItem('region_mapper_points', JSON.stringify(regions));
+  }
+  function removeRegion(i) { regions.splice(i,1); render(); }
+
+  img.addEventListener('click', (e) => {
+    const rect = img.getBoundingClientRect();
+    const x = (e.clientX - rect.left) / rect.width;
+    const y = (e.clientY - rect.top) / rect.height;
+    pending = { x, y };
+    document.getElementById('name-input').focus();
+  });
+
+  document.getElementById('save-btn').addEventListener('click', () => {
+    const name = document.getElementById('name-input').value.trim();
+    if (!pending || !name) { alert('Click the map first, then type a name.'); return; }
+    regions.push({ name, x: pending.x, y: pending.y });
+    document.getElementById('name-input').value = '';
+    pending = null;
+    render();
+  });
+
+  render();
+</script>
+</body>
+</html>

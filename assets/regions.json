@@ -1,0 +1,147 @@
+[
+  {
+    "name": "Zorko",
+    "x": 0.2531,
+    "y": 0.0455
+  },
+  {
+    "name": "G-block",
+    "x": 0.3469,
+    "y": 0.0607
+  },
+  {
+    "name": "H-block",
+    "x": 0.4562,
+    "y": 0.0759
+  },
+  {
+    "name": "Near G-block",
+    "x": 0.3469,
+    "y": 0.1194
+  },
+  {
+    "name": "Patrol camp 2",
+    "x": 0.3531,
+    "y": 0.1498
+  },
+  {
+    "name": "H-block stairs",
+    "x": 0.4487,
+    "y": 0.1397
+  },
+  {
+    "name": "Near H-block",
+    "x": 0.4594,
+    "y": 0.17
+  },
+  {
+    "name": "D-block",
+    "x": 0.2644,
+    "y": 0.2024
+  },
+  {
+    "name": "Opposite of D block",
+    "x": 0.3675,
+    "y": 0.2156
+  },
+  {
+    "name": "Petrol Pump",
+    "x": 0.3344,
+    "y": 0.2915
+  },
+  {
+    "name": "Opposite of H block",
+    "x": 0.4581,
+    "y": 0.2591
+  },
+  {
+    "name": "Bus area",
+    "x": 0.0594,
+    "y": 0.4332
+  },
+  {
+    "name": "Parking",
+    "x": 0.1594,
+    "y": 0.4504
+  },
+  {
+    "name": "Volleyball ground",
+    "x": 0.2125,
+    "y": 0.4453
+  },
+  {
+    "name": "Chairs (near C-block)",
+    "x": 0.2625,
+    "y": 0.4777
+  },
+  {
+    "name": "C-block",
+    "x": 0.3375,
+    "y": 0.3715
+  },
+  {
+    "name": "Lawn (central)",
+    "x": 0.2425,
+    "y": 0.5789
+  },
+  {
+    "name": "Opposite of A block",
+    "x": 0.2437,
+    "y": 0.6589
+  },
+  {
+    "name": "A-block",
+    "x": 0.3456,
+    "y": 0.582
+  },
+  {
+    "name": "Lawn (small)",
+    "x": 0.2612,
+    "y": 0.6984
+  },
+  {
+    "name": "Backside",
+    "x": 0.3781,
+    "y": 0.5972
+  },
+  {
+    "name": "B-block (left)",
+    "x": 0.2062,
+    "y": 0.7773
+  },
+  {
+    "name": "B-block (right)",
+    "x": 0.3362,
+    "y": 0.7773
+  },
+  {
+    "name": "Chairs (near B-block)",
+    "x": 0.2644,
+    "y": 0.7996
+  },
+  {
+    "name": "Dustbin",
+    "x": 0.2219,
+    "y": 0.8482
+  },
+  {
+    "name": "Workshop",
+    "x": 0.3406,
+    "y": 0.8553
+  },
+  {
+    "name": "Gate",
+    "x": 0.1062,
+    "y": 0.833
+  },
+  {
+    "name": "Football",
+    "x": 0.0469,
+    "y": 0.7085
+  },
+  {
+    "name": "Dirt",
+    "x": 0.1469,
+    "y": 0.7166
+  }
+]

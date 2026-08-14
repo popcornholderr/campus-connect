@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<!-- maximum-scale=1 + user-scalable=no stop the BROWSER's own pinch-zoom
+     from ever firing — the map has its own real pinch-zoom (js/app.js,
+     MapView), and without this the two used to fight, with the browser
+     zooming the whole page (bottom bar, tiles, everything) instead of
+     just the map. -->
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+<title>Campus Connect — Darshan University</title>
+<link rel="manifest" href="manifest.json" />
+<meta name="theme-color" content="#15151a" />
+<link rel="icon" href="assets/icons/icon-192.png" />
+<link rel="apple-touch-icon" href="assets/icons/apple-touch-icon.png" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Campus Connect" />
+<meta name="mobile-web-app-capable" content="yes" />
+<link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+<div id="app-shell">
+
+  <!-- ================= SCREEN: INSTALL APP (gate, shown first) ================= -->
+  <section class="screen active" id="screen-install">
+    <div class="auth-wrap install-wrap">
+      <div class="install-icon"><img src="assets/icons/icon-192.png" alt="" width="84" height="84" /></div>
+      <h1 class="auth-title" style="font-size:30px; text-align:center;">Install Campus Connect</h1>
+      <p class="auth-sub" style="text-align:center;">A one-tap install turns this into a real app on your phone — full screen, faster, and it can keep your live position updated on the map.</p>
+
+      <button class="btn-primary" id="btn-install">Install app</button>
+
+      <div class="install-ios-steps" id="install-ios-steps" style="display:none;">
+        <p class="eyebrow" style="margin-bottom:10px;">On iPhone / iPad</p>
+        <div class="ios-step"><span class="n">1</span><span>Tap the <b>Share</b> button <span class="share-glyph">⬆️</span> in Safari's toolbar</span></div>
+        <div class="ios-step"><span class="n">2</span><span>Scroll down and tap <b>Add to Home Screen</b></span></div>
+        <div class="ios-step"><span class="n">3</span><span>Tap <b>Add</b>, then open Campus Connect from your home screen</span></div>
+      </div>
+
+      <button class="btn-text" id="btn-skip-install" style="margin-top:20px; align-self:center;">Continue in browser instead</button>
+    </div>
+  </section>
+
+  <!-- ================= SCREEN: LOGIN ================= -->
+  <section class="screen" id="screen-login">
+    <div class="auth-wrap">
+      <div class="auth-mark"><b>Campus</b> Connect</div>
+      <h1 class="auth-title">Find your<br/>people on campus.</h1>
+      <p class="auth-sub">Sign in with your Darshan University Google account. One account per student — no fakes, no duplicates.</p>
+
+      <!-- Local demo mode only (hidden automatically when a real backend is attached) -->
+      <div class="field" id="field-enroll" style="display:none;">
+        <label>Enrollment number</label>
+        <input id="input-enroll" type="text" placeholder="e.g. 22CE0142" autocomplete="off" />
+        <p class="hint">You'll sign in as <b><span id="preview-email">enrollment</span>@darshan.ac.in</b></p>
+        <p class="error">Enter a valid enrollment number.</p>
+      </div>
+      <button class="btn-primary" id="btn-login" style="display:none;">Continue (demo)</button>
+
+      <button class="btn-google" id="btn-google-login" style="display:none;">
+        <svg width="18" height="18" viewBox="0 0 48 48">
+          <path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.6 29.3 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.1 8 3l5.7-5.7C34.6 6.1 29.6 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.7-.4-3.5z"/>
+          <path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.6 15.9 18.9 13 24 13c3.1 0 5.8 1.1 8 3l5.7-5.7C34.6 6.1 29.6 4 24 4c-7.7 0-14.3 4.4-17.7 10.7z"/>
+          <path fill="#4CAF50" d="M24 44c5.5 0 10.5-2.1 14.3-5.6l-6.6-5.6C29.6 34.6 27 35.5 24 35.5c-5.3 0-9.7-3.4-11.3-8.1l-6.6 5.1C9.6 39.4 16.3 44 24 44z"/>
+          <path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.3-2.3 4.2-4.2 5.6l6.6 5.6C41.5 36.4 44 30.7 44 24c0-1.3-.1-2.7-.4-3.5z"/>
+        </svg>
+        <span>Continue with Google</span>
+      </button>
+      <p class="auth-foot" id="login-error" style="display:none; color:var(--signal);"></p>
+
+      <p class="auth-foot">By continuing you agree to keep GPS location turned on while Campus Connect is open, so campus location sharing works.</p>
+    </div>
+  </section>
+
+  <!-- ================= SCREEN: ONBOARDING ================= -->
+  <section class="screen" id="screen-onboarding">
+    <div class="auth-wrap" style="padding-top:36px;">
+      <div class="step-dots" id="step-dots"></div>
+
+      <!-- Step 1: photo + name + username -->
+      <div class="ob-step" data-step="1">
+        <h2 class="auth-title" style="font-size:26px;">Set up your profile</h2>
+        <p class="auth-sub" style="margin-bottom:24px;">A real photo helps classmates recognize your pin on the map.</p>
+        <div class="avatar-upload">
+          <div class="circle" id="avatar-circle"><span class="plus">+</span></div>
+          <input type="file" id="avatar-input" accept="image/*" hidden />
+          <div class="label">Upload profile photo</div>
+        </div>
+        <div class="field"><label>Full name</label><input id="input-name" placeholder="Your full name" /></div>
+        <div class="field" id="field-username">
+          <label>Username</label><input id="input-username" placeholder="unique_username" />
+          <p class="error">That username is already taken.</p>
+        </div>
+      </div>
+
+      <!-- Step 2: age / branch / semester -->
+      <div class="ob-step" data-step="2" style="display:none;">
+        <h2 class="auth-title" style="font-size:26px;">Academics</h2>
+        <p class="auth-sub" style="margin-bottom:24px;">Helps classmates in your branch or semester find you.</p>
+        <div class="field"><label>Age</label><input id="input-age" type="number" min="15" max="60" placeholder="20" /></div>
+        <div class="field"><label>Branch / Programme</label><select id="input-branch"></select></div>
+        <div class="field"><label>Semester</label><select id="input-semester">
+          <option value="1">Semester 1</option><option value="2">Semester 2</option><option value="3">Semester 3</option>
+          <option value="4">Semester 4</option><option value="5">Semester 5</option><option value="6">Semester 6</option>
+          <option value="7">Semester 7</option><option value="8">Semester 8</option>
+        </select></div>
+      </div>
+
+      <!-- Step 3: place / relationship / optional -->
+      <div class="ob-step" data-step="3" style="display:none;">
+        <h2 class="auth-title" style="font-size:26px;">A little more</h2>
+        <p class="auth-sub" style="margin-bottom:24px;">Last step before your first look at the map.</p>
+        <div class="field"><label>Where do you live</label>
+          <div class="pill-toggle" id="toggle-place">
+            <button data-val="hostel">Campus hostel</button>
+            <button data-val="city">Select city</button>
+          </div>
+          <input id="input-place-detail" style="margin-top:10px;" placeholder="Hostel block or city name" />
+        </div>
+        <div class="field"><label>Relationship status</label>
+          <div class="pill-toggle" id="toggle-relationship">
+            <button data-val="Single">Single</button>
+            <button data-val="Taken">Taken</button>
+          </div>
+        </div>
+        <div class="field"><label>Contact number <span style="text-transform:none;font-weight:500;">(optional)</span></label><input id="input-phone" type="tel" placeholder="+91" /></div>
+        <div class="field"><label>Social handle <span style="text-transform:none;font-weight:500;">(optional)</span></label><input id="input-social" placeholder="@instagram or link" /></div>
+      </div>
+
+      <button class="btn-primary" id="btn-ob-next">Continue</button>
+      <button class="btn-text" id="btn-ob-back" style="margin-top:14px; align-self:center;">Back</button>
+    </div>
+  </section>
+
+  <!-- ================= SCREEN: GPS PERMISSION ================= -->
+  <section class="screen" id="screen-gps">
+    <div class="auth-wrap" style="align-items:center; text-align:center; justify-content:center;">
+      <div style="font-size:44px; margin-bottom:18px;">📍</div>
+      <h2 class="auth-title" style="font-size:24px;">Turn on location</h2>
+      <p class="auth-sub">Campus Connect only works with GPS on — it's how your pin shows up for classmates in real time. When the browser asks, choose <b>Allow</b> (or <b>Allow while visiting the site</b>) so this works every time you have the app open.</p>
+      <button class="btn-primary" id="btn-enable-gps">Allow location access</button>
+      <p class="auth-sub" style="margin-top:16px; font-size:12.5px;">Your position only updates while Campus Connect is open on screen — like any site or installed app, it can't see your location in the background after you switch away. If location is blocked, open your browser's site settings for Campus Connect and set Location to Allow.</p>
+    </div>
+  </section>
+
+  <!-- ================= SCREEN: MAP (main) ================= -->
+  <section class="screen" id="screen-map">
+    <div class="topbar">
+      <div class="brand-mark"><span class="cc-logo">CC<span class="dot"></span></span></div>
+      <div class="scope-toggle glass" id="scope-toggle">
+        <button data-scope="everyone" class="selected">Everyone</button>
+        <button data-scope="friends">Friends</button>
+      </div>
+      <button class="btn-text" id="btn-edit-friends" style="text-decoration:none; display:none;">Edit friends</button>
+    </div>
+    <div class="searchbar glass">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><circle cx="11" cy="11" r="7" stroke="#a6a4ac" stroke-width="2"/><path d="M21 21l-4.3-4.3" stroke="#a6a4ac" stroke-width="2" stroke-linecap="round"/></svg>
+      <input id="map-search" placeholder="Search students on the map…" />
+    </div>
+    <div class="search-results glass" id="map-search-results"></div>
+
+    <div class="map-wrap">
+      <div class="geo-banner glass-dark" id="geo-loading">
+        <span>📡</span>
+        <b>Locating you…</b>
+      </div>
+      <div class="oob-screen" id="oob-screen">
+        <div class="icon">🧭</div>
+        <h3 style="font-size:19px; margin-bottom:8px;">You're outside campus range</h3>
+        <p class="auth-sub">Campus Connect only works within Darshan University campus. Come back within the mapped area to keep using the app.</p>
+      </div>
+      <div class="map-scroll" id="map-scroll">
+        <div class="map-canvas" id="map-canvas">
+          <img src="assets/campus-map.jpg" alt="Darshan University campus map" draggable="false" />
+          <!-- pins, bubbles, hearts injected here by JS -->
+        </div>
+      </div>
+      <div class="info-card-backdrop" id="info-backdrop"></div>
+    </div>
+  </section>
+
+  <!-- ================= SCREEN: COMMENTS ================= -->
+  <section class="screen" id="screen-comments">
+    <div class="topbar"><h2 class="brand">Comments</h2></div>
+    <div class="searchbar">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><circle cx="11" cy="11" r="7" stroke="#a6a4ac" stroke-width="2"/><path d="M21 21l-4.3-4.3" stroke="#a6a4ac" stroke-width="2" stroke-linecap="round"/></svg>
+      <input id="comments-search" placeholder="Search a student's comments…" />
+    </div>
+    <div class="search-results" id="comments-search-results"></div>
+    <div class="list-screen">
+      <div class="list-scroll-wrap">
+        <div class="list-scroll" id="comments-list-wrap">
+          <div class="user-nav" id="comments-user-nav" style="display:none;">
+            <button id="comments-prev">‹</button>
+            <span class="who" id="comments-who"></span>
+            <button id="comments-next">›</button>
+            <span class="clear" id="comments-clear">clear</span>
+          </div>
+          <div id="comments-list"></div>
+        </div>
+        <div class="date-scrubber" id="comments-scrubber"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= SCREEN: LIKES ================= -->
+  <section class="screen" id="screen-likes">
+    <div class="topbar"><h2 class="brand">Likes</h2></div>
+    <div class="searchbar">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><circle cx="11" cy="11" r="7" stroke="#a6a4ac" stroke-width="2"/><path d="M21 21l-4.3-4.3" stroke="#a6a4ac" stroke-width="2" stroke-linecap="round"/></svg>
+      <input id="likes-search" placeholder="Search a student's likes…" />
+    </div>
+    <div class="search-results" id="likes-search-results"></div>
+    <div class="list-screen">
+      <div class="list-scroll-wrap">
+        <div class="list-scroll" id="likes-list-wrap">
+          <div class="user-nav" id="likes-user-nav" style="display:none;">
+            <button id="likes-prev">‹</button>
+            <span class="who" id="likes-who"></span>
+            <button id="likes-next">›</button>
+            <span class="clear" id="likes-clear">clear</span>
+          </div>
+          <div id="likes-list"></div>
+        </div>
+        <div class="date-scrubber" id="likes-scrubber"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= SCREEN: MY PROFILE ================= -->
+  <section class="screen" id="screen-profile">
+    <div class="profile-hero">
+      <div class="av" id="my-profile-av"></div>
+      <div class="name" id="my-profile-name"></div>
+      <div class="uname" id="my-profile-uname"></div>
+      <div class="enroll" id="my-profile-enroll"></div>
+    </div>
+    <div class="profile-body">
+      <div class="info-grid" id="my-profile-grid"></div>
+      <div class="section-title">Account</div>
+      <button class="row-btn" id="btn-edit-profile">Edit profile<span class="sub">Photo, name, branch, semester &amp; more</span></button>
+      <button class="row-btn" id="btn-blocked-list">Blocked users<span class="sub" id="blocked-count-sub">Manage who can't see or contact you</span></button>
+      <div class="section-title">About</div>
+      <button class="row-btn danger" id="btn-logout">Log out</button>
+    </div>
+  </section>
+
+  <!-- ================= OTHER USER PROFILE (overlay) ================= -->
+  <section class="screen" id="screen-other-profile">
+    <div class="topbar">
+      <button class="btn-text" id="btn-back-from-profile" style="text-decoration:none;">← Back</button>
+    </div>
+    <div class="profile-hero">
+      <div class="av" id="op-av"></div>
+      <div class="name" id="op-name"></div>
+      <div class="uname" id="op-uname"></div>
+      <div class="enroll" id="op-enroll"></div>
+    </div>
+    <div class="profile-body">
+      <div class="info-grid" id="op-grid"></div>
+      <div style="display:flex; gap:8px;">
+        <button class="row-btn" id="op-friend-btn" style="margin-bottom:0;">Add friend</button>
+        <button class="row-btn danger" id="op-block-btn" style="margin-bottom:0;">Block</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= BOTTOM NAV ================= -->
+  <nav class="bottom-nav glass" id="bottom-nav">
+    <button data-tab="map" class="active">
+      <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 20l-6-2V4l6 2 6-2 6 2v16l-6-2-6 2z"/><path d="M9 6v14M15 4v14"/></svg>
+      <span class="lbl">Map</span><span class="dot" id="dot-map"></span>
+    </button>
+    <button data-tab="comments">
+      <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z"/></svg>
+      <span class="lbl">Comments</span><span class="dot" id="dot-comments"></span>
+    </button>
+    <button data-tab="likes">
+      <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M20.8 4.6a5.5 5.5 0 00-7.8 0L12 5.6l-1-1a5.5 5.5 0 00-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 000-7.8z"/></svg>
+      <span class="lbl">Likes</span><span class="dot" id="dot-likes"></span>
+    </button>
+    <button data-tab="profile">
+      <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4.4 3.6-7 8-7s8 2.6 8 7"/></svg>
+      <span class="lbl">Profile</span>
+    </button>
+  </nav>
+
+  <!-- ================= EDIT FRIENDS MODAL ================= -->
+  <div class="modal-backdrop" id="friends-modal-backdrop"></div>
+  <div class="modal-sheet" id="friends-modal">
+    <div class="modal-head"><h3>Edit friends</h3><button id="friends-modal-close">✕</button></div>
+    <div class="modal-body">
+      <div class="searchbar" style="margin:0 0 12px;"><input id="friends-search" placeholder="Search everyone on the app…" /></div>
+      <div id="friends-list"></div>
+    </div>
+  </div>
+
+  <!-- ================= EDIT PROFILE MODAL ================= -->
+  <div class="modal-backdrop" id="edit-modal-backdrop"></div>
+  <div class="modal-sheet" id="edit-modal">
+    <div class="modal-head"><h3>Edit profile</h3><button id="edit-modal-close">✕</button></div>
+    <div class="modal-body" id="edit-modal-body"></div>
+  </div>
+
+  <!-- ================= BLOCKED LIST MODAL ================= -->
+  <div class="modal-backdrop" id="blocked-modal-backdrop"></div>
+  <div class="modal-sheet" id="blocked-modal">
+    <div class="modal-head"><h3>Blocked users</h3><button id="blocked-modal-close">✕</button></div>
+    <div class="modal-body" id="blocked-list"></div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+</div>
+
+<script src="js/constants.js"></script>
+<script src="js/config.js"></script>
+<script src="js/profanity.js"></script>
+
+<!-- ================= BACKEND SWAP POINT =================
+     Real Supabase backend (default — see README.md "Supabase setup" first,
+     you must run supabase/schema.sql and fill in js/supabase-config.js):
+-->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="js/supabase-config.js"></script>
+<script src="js/store.supabase.js"></script>
+
+<!-- Local demo (no setup, works instantly, single-browser only) — comment
+     out the three lines above and uncomment this one instead, and set
+     AUTH_MODE = "local" in js/constants.js:
+<script src="js/store.js"></script>
+-->
+
+<script src="js/geo.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

@@ -507,6 +507,7 @@ function wireGps() {
 let firstFixReceived = false;
 let locationTrackingStarted = false;
 let demoFallbackTimer = null;
+let gpsOffTimer = null; // debounce before we treat GPS errors as "turned off"
 
 function startLocationTracking() {
   // Guard against wiring this up more than once (e.g. the person backs
@@ -526,13 +527,33 @@ function startLocationTracking() {
 
   Geo.onUpdate(async (fix) => {
     if (fix.error) {
-      // Permission denied or unsupported (e.g. testing on desktop, off-campus).
-      // Fall back to a simulated on-campus walk so the app is still demoable.
+      // Real GPS had already been reporting successfully and just started
+      // erroring — that's the device's location/GPS getting turned off
+      // mid-session, not a one-off hiccup. Debounce for a couple seconds
+      // first (a single dropped fix from a weak signal shouldn't be
+      // enough to yank the pin), and only mark location as off if the
+      // errors keep coming past that window.
+      if (Geo.usingRealGps) {
+        if (!gpsOffTimer) gpsOffTimer = setTimeout(() => { gpsOffTimer = null; markLocationOff(); }, 2500);
+        return;
+      }
+      // Never had real GPS to begin with (e.g. testing on desktop, no
+      // hardware, permission dialog dismissed). Fall back to a simulated
+      // on-campus walk so the app is still demoable.
       if (!firstFixReceived) {
         toast("Location unavailable — showing a demo position instead");
         Geo.startDemoWalk();
       }
       return;
+    }
+    // A real or demo fix landed — GPS is (still) on. Cancel any pending
+    // "just turned off" mark and, if we'd already flagged it off, flip
+    // it back on now that fixes are flowing again.
+    clearTimeout(gpsOffTimer);
+    gpsOffTimer = null;
+    if (App.me && App.me.locationOn === false) {
+      App.me.locationOn = true;
+      renderMapPins();
     }
     // A real fix landed — make sure it's the only thing driving the pin.
     clearTimeout(demoFallbackTimer);
@@ -555,6 +576,21 @@ function startLocationTracking() {
       Geo.startDemoWalk();
     }
   }, 4000);
+}
+
+/** Called once GPS errors have persisted past the debounce window in the
+ *  Geo.onUpdate handler above — i.e. the device's location just got
+ *  turned off after previously working. Hides this user's own pin (for
+ *  everyone, not just locally) until a real fix lands again. */
+async function markLocationOff() {
+  if (!App.me || App.me.locationOn === false) return; // already off / not signed in
+  App.me.locationOn = false;
+  renderMapPins();
+  toast("Location turned off — your pin is hidden until it's back on");
+  if (typeof Store.updateLocationStatus === "function") {
+    try { await Store.updateLocationStatus(App.me.id, false); }
+    catch (err) { console.error("updateLocationStatus failed:", err); }
+  }
 }
 
 let hasCenteredOnUser = false;
@@ -1034,6 +1070,12 @@ async function renderMapPins() {
   visible = visible.filter((u) => u.id !== App.me.id);
   visible.push(App.me);
   visible = visible.filter((u) => u.pos);
+  // A pin only ever shows for a user while their device's GPS/location is
+  // actually on (locationOn defaults to true — see store.js/store.supabase.js).
+  // This applies to everyone, including "me": if my own location just got
+  // turned off, my own pin disappears for me too, same as it would for
+  // anyone else looking at the map.
+  visible = visible.filter((u) => u.locationOn !== false);
 
   // Reuse existing pin elements keyed by user id instead of wiping and
   // rebuilding every pin on every update. Recreating the DOM node each

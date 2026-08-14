@@ -25,6 +25,11 @@ create table if not exists public.users (
   social text default '',
   pos jsonb default '{"x":0.35,"y":0.55}'::jsonb,
   active boolean default true,
+  -- Whether this student's device currently has real GPS/location on. The
+  -- map only ever shows a pin for a user when this is true — flipped to
+  -- false the moment their device's location gets turned off/denied, and
+  -- back to true the moment a fresh fix lands. See js/geo.js + js/app.js.
+  location_on boolean default true,
   onboarded boolean default false,
   last_seen bigint,
   friends uuid[] default '{}',
@@ -34,6 +39,11 @@ create table if not exists public.users (
 -- Case-insensitive username uniqueness (only enforced once a username is set)
 create unique index if not exists users_username_lower_idx
   on public.users (username_lower) where username_lower <> '';
+
+-- Running this file again on a database that already has the users table
+-- (i.e. it was created before location_on existed) — add the column
+-- instead of silently doing nothing, so existing deployments pick it up.
+alter table public.users add column if not exists location_on boolean default true;
 
 -- ---------- comments ----------
 create table if not exists public.comments (

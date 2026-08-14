@@ -11,6 +11,13 @@ const Geo = {
   watchId: null,
   lastFix: null, // {lat, lon, accuracy, ts}
   listeners: [],
+  // True once we've received at least one REAL (non-demo) fix from
+  // watchPosition and haven't been stop()'d since. app.js uses this to
+  // tell "device GPS just got turned off mid-session" (a real watch that
+  // was successfully reporting starts erroring) apart from "never had
+  // real GPS to begin with" (desktop/no-hardware, which falls back to
+  // the demo walk instead of hiding anything).
+  usingRealGps: false,
 
   // ---- smoothing state (raw GPS is noisy — every real phone's lat/lon
   // wobbles by several metres even standing perfectly still, which is
@@ -99,6 +106,7 @@ const Geo = {
         // good fix. Once we have an established position, ignore anything
         // worse than 60m accuracy entirely rather than acting on it.
         if (typeof accuracy === "number" && accuracy > 60 && this._smoothLat !== null) return;
+        this.usingRealGps = true;
         const smoothed = this._smooth(latitude, longitude, accuracy);
         const inside = isInsideCampus(smoothed.lat, smoothed.lon);
         const img = geoToImage(smoothed.lat, smoothed.lon);
@@ -126,6 +134,7 @@ const Geo = {
     this.watchId = null;
     this._smoothLat = null;
     this._smoothLon = null;
+    this.usingRealGps = false;
   },
 
   /** For desktop/demo browsers without real campus GPS: simulate a walk. */

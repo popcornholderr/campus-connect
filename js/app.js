@@ -677,7 +677,7 @@ function wireMap() {
     const all = await Store.allUsers();
     const blocked = await Store.getBlocked(App.me.id);
     const results = all.filter(
-      (u) => u.id !== App.me.id && u.active && !blocked.includes(u.id) && u.name.toLowerCase().includes(q)
+      (u) => u.id !== App.me.id && isPinVisible(u) && !blocked.includes(u.id) && u.name.toLowerCase().includes(q)
     );
     box.innerHTML = results.length
       ? results.map((u) => `
@@ -1058,6 +1058,14 @@ function startStaleGpsWatch() {
   }, 10000);
 }
 
+/** Single source of truth for "is this person's pin currently on the map" —
+ *  used by renderMapPins() and by map search, so a user who's vanished
+ *  from the map (GPS off, out of range, stale) can't turn up in search
+ *  either. */
+function isPinVisible(u) {
+  return !!(u && u.pos && u.active && Date.now() - (u.lastSeen || 0) < PIN_STALE_MS);
+}
+
 async function renderMapPins() {
   if (!App.me) return; // not signed in / not ready yet — nothing to render
   const canvas = $("#map-canvas");
@@ -1079,10 +1087,10 @@ async function renderMapPins() {
   // ever getting the chance to flip its own flag off, so we also age out
   // anyone whose last update is older than PIN_STALE_MS. Covers: they
   // turned location off, walked out of the map's range, or the app simply
-  // lost track of whether their GPS is still on.
-  const now = Date.now();
-  visible = visible.filter((u) => u.pos && u.active && now - (u.lastSeen || 0) < PIN_STALE_MS);
-
+  // lost track of whether their GPS is still on. (isPinVisible() is the
+  // shared rule — search uses the same check so hidden pins can't be
+  // found there either.)
+  visible = visible.filter(isPinVisible);
   // Reuse existing pin elements keyed by user id instead of wiping and
   // rebuilding every pin on every update. Recreating the DOM node each
   // time discarded any in-flight CSS transition on left/top (see .pin in

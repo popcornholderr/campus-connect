@@ -24,8 +24,12 @@ function isAdminEmail(email) {
 // How long a user's last position update is trusted as "their GPS is on".
 // Past this age with no fresh update — they turned location off, walked out
 // of range, closed the tab, lost signal, whatever — their pin vanishes from
-// everyone else's map instead of sitting there stale forever.
-const PIN_STALE_MS = 45 * 1000; // 45s
+// everyone else's map instead of sitting there stale forever. Kept generous
+// (well above a normal watchPosition gap) since phones/browsers routinely
+// throttle or briefly drop real GPS updates for a while even with location
+// genuinely still on — too tight a window here reads as pins vanishing for
+// no reason.
+const PIN_STALE_MS = 2 * 60 * 1000; // 2min
 
 const BRANCHES = [
   "B.Tech. - Computer Science & Engineering",

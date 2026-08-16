@@ -259,7 +259,12 @@ const SCREENS_WITH_BOTTOM_NAV = new Set([
 function goTo(screenId) {
   $all(".screen").forEach((s) => s.classList.remove("active"));
   $("#" + screenId).classList.add("active");
-  $("#app-shell").classList.toggle("bottom-nav-visible", SCREENS_WITH_BOTTOM_NAV.has(screenId));
+  const showNav = SCREENS_WITH_BOTTOM_NAV.has(screenId);
+  $("#app-shell").classList.toggle("bottom-nav-visible", showNav);
+  // Line the glass pill up as soon as the bar actually becomes visible —
+  // covers goTo() calls that bypass switchTab() entirely (e.g. landing on
+  // the map straight after GPS confirmation), not just tab switches.
+  if (showNav) moveNavPill();
 }
 
 /* ======================================================================
@@ -1442,11 +1447,28 @@ function wireBottomNav() {
   $all("#bottom-nav button").forEach((b) => {
     b.addEventListener("click", () => switchTab(b.dataset.tab));
   });
+  // Keep the sliding glass pill lined up with the active tab even if the
+  // bar's width changes (rotation, resize) while it's on screen.
+  window.addEventListener("resize", () => moveNavPill());
+}
+/** Positions the little glass "pill" behind whichever tab button is
+ *  currently .active, measuring the real button so it always lines up
+ *  exactly regardless of icon width/spacing — see .nav-active-pill in
+ *  css/style.css for what actually renders it. */
+function moveNavPill() {
+  const nav = $("#bottom-nav");
+  const btn = nav.querySelector("button.active");
+  const pill = $("#nav-active-pill");
+  if (!nav || !btn || !pill) return;
+  const navRect = nav.getBoundingClientRect();
+  const btnRect = btn.getBoundingClientRect();
+  nav.style.setProperty("--pill-x", btnRect.left - navRect.left + "px");
+  nav.style.setProperty("--pill-w", btnRect.width + "px");
 }
 async function switchTab(tab) {
   App.activeTab = tab;
   $all("#bottom-nav button").forEach((b) => b.classList.toggle("active", b.dataset.tab === tab));
-  goTo("screen-" + tab);
+  goTo("screen-" + tab); // also repositions the active-tab glass pill, see goTo()
   if (tab === "map") {
     // Force a fresh size/clamp on every return to the map, not just
     // renderMapPins() — self-heals even if something odd happened to

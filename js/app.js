@@ -531,20 +531,20 @@ function startLocationTracking() {
       if (!firstFixReceived) {
         toast("Location unavailable — showing a demo position instead");
         Geo.startDemoWalk();
-        return;
       }
-      // We'd already been getting real fixes and now the browser is
-      // reporting an error (permission revoked mid-session, GPS signal
-      // lost, location toggled off in the OS) — don't just silently keep
-      // showing the last position as if it were still live. Mark this
-      // device inactive so our own pin vanishes from the map for everyone,
-      // same as anyone else whose GPS drops.
-      if (!App.me) return;
-      firstFixReceived = false;
-      await Store.setActive(App.me.id, false);
-      App.me.active = false;
-      renderMapPins();
-      toast("Location signal lost — your pin is hidden until it's back");
+      // If we'd already been getting real fixes, a single error here is
+      // usually just a transient GPS hiccup (indoors for a second, one
+      // timed-out fix) — NOT a sign location was actually turned off.
+      // watchPosition keeps retrying on its own and will call us again
+      // with a good fix shortly, so we deliberately do nothing drastic
+      // here: no instant deactivate, no resetting firstFixReceived (doing
+      // that used to make the very next hiccup look like "never got a fix"
+      // and kick off the demo walk on top of your real tracking — that
+      // was the actual cause of pins vanishing/glitching while GPS was
+      // still on). If the signal is genuinely and lastingly gone, the pin
+      // fades on its own via the staleness check in isPinVisible() once
+      // PIN_STALE_MS passes with no fresh update — same mechanism as
+      // everyone else's pins, self-healing the moment a real fix returns.
       return;
     }
     // A real fix landed — make sure it's the only thing driving the pin.
@@ -582,14 +582,14 @@ async function handleFix(fix) {
   const inside = isAdmin || fix.inside !== false;
   $("#oob-screen").classList.toggle("show", !inside);
   if (!inside) {
-    // Walked outside the campus geofence — we don't know their position
-    // relative to the map anymore, so pull their pin instead of leaving it
-    // sitting at the last spot inside campus.
-    if (App.me.active !== false) {
-      App.me.active = false;
-      await Store.setActive(App.me.id, false);
-      renderMapPins();
-    }
+    // Walked outside the campus geofence — freeze the pin here instead of
+    // moving it further, and just don't refresh it. If this is a real,
+    // sustained exit, the pin fades on its own once PIN_STALE_MS passes
+    // with no fresh update (same staleness rule everyone else's pin uses).
+    // We deliberately don't force-deactivate on the very first out-of-
+    // bounds fix — right at the campus boundary a fix or two can flicker
+    // in/out, and instantly toggling active off/on for that read as pins
+    // randomly vanishing.
     return;
   }
 
@@ -1577,7 +1577,7 @@ function renderActivityList(containerSel, items, usersById, kind) {
       ? (mine ? `You: ${item.text}` : item.text)
       : (mine ? "You liked their pin" : "Liked your pin");
     html += `
-      <div class="activity-row" data-ts="${item.ts}" data-id="${item.id}">
+      <div class="activity-row" data-ts="${item.ts}" data-id="${item.id}" data-user-id="${other.id}" style="cursor:pointer;">
         <div class="av">${avatarHTML(other)}</div>
         <div class="body">
           <div class="top"><span class="name">${other.name}</span><span class="time">${timeAgo(item.ts)} · ${fmtDate(item.ts)}</span></div>
@@ -1586,6 +1586,11 @@ function renderActivityList(containerSel, items, usersById, kind) {
       </div>`;
   });
   container.innerHTML = html;
+  // Tapping anywhere on a row (not just the avatar) opens that person's
+  // full profile — same profile screen the map pin's info card links to.
+  $all(".activity-row", container).forEach((row) =>
+    row.addEventListener("click", () => openOtherProfile(row.dataset.userId))
+  );
 }
 
 function renderScrubber(sel, items) {

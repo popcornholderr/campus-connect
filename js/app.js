@@ -13,6 +13,12 @@ const App = {
   likeThreadUser: null,
   bubbleTimers: {},
   simTimer: null,
+  // Comment/like events that arrived from someone while we weren't looking
+  // at the map — held here instead of being dropped, and played back (see
+  // flushPendingMapActivity()) the next time the map is actually on
+  // screen, so "user2 wasn't on the map tab at that exact second" no
+  // longer means the bubble/heart next to user1's pin just never happens.
+  pendingMapActivity: [],
 };
 
 // Safety net: surface any async error that slips through without its own
@@ -601,6 +607,17 @@ async function handleFix(fix) {
   App.me.pos = { x: fix.nx, y: fix.ny };
   await Store.updatePosition(App.me.id, App.me.pos); // also flips active back to true
   App.me.active = true;
+  // renderMapPins() pushes this same local App.me object straight into
+  // isPinVisible()'s staleness check instead of re-fetching your own row
+  // (see the comment on that push in renderMapPins()) — so lastSeen has to
+  // be refreshed right here too, not just on the server. Without this, the
+  // very first render after opening the app was reading whatever lastSeen
+  // your account had from your PREVIOUS session (however old that was),
+  // filtering your own pin out as "stale" even with a brand new GPS fix in
+  // hand — and it would only start working after a restart, once that
+  // stale value on the server had finally been overwritten by the tail end
+  // of the broken session.
+  App.me.lastSeen = Date.now();
   renderMapPins();
 
   // First time we get a real location, snap the view to it and zoom in —
@@ -639,8 +656,8 @@ function enterMapFirstTime() {
       const all = await Store.allUsers();
       const actor = all.find((u) => u.id === evt.fromId);
       if (!actor) return;
-      if (evt.type === "comment" && App.activeTab === "map") spawnBubble(actor, evt.text);
-      if (evt.type === "like" && App.activeTab === "map") { spawnHeart(actor.pos); playNotifySound(); }
+      if (evt.type === "comment") showOrQueueActivity("comment", actor, evt.text);
+      if (evt.type === "like") showOrQueueActivity("like", actor);
       refreshNavDots();
     });
   } else {
@@ -1412,6 +1429,40 @@ function spawnHeart(fromPos) {
   setTimeout(() => h.remove(), 1800);
 }
 
+/** Single entry point for "someone commented/liked me" — used by both the
+ *  live realtime subscription and the local-demo simulator. If the map is
+ *  on screen right now, show it immediately next to their pin like before;
+ *  otherwise queue it instead of silently dropping it, so switching to the
+ *  map afterwards still shows what happened while you were away. */
+function showOrQueueActivity(kind, actor, text) {
+  if (App.activeTab === "map") {
+    if (kind === "comment") spawnBubble(actor, text);
+    else { spawnHeart(actor.pos); playNotifySound(); }
+  } else {
+    App.pendingMapActivity.push({ kind, actorId: actor.id, text });
+  }
+}
+
+/** Replays anything queued by showOrQueueActivity() while the map wasn't
+ *  visible — called whenever the map screen actually comes on screen (see
+ *  switchTab()). Re-looks-up each actor's CURRENT pin position rather than
+ *  trusting a possibly-stale one captured back when the event happened,
+ *  and staggers multiple bubbles/hearts slightly so a burst of activity
+ *  doesn't all land on top of itself in the same instant. */
+async function flushPendingMapActivity() {
+  if (!App.pendingMapActivity.length) return;
+  const queued = App.pendingMapActivity.splice(0, App.pendingMapActivity.length);
+  const all = await Store.allUsers();
+  queued.forEach((item, i) => {
+    const actor = all.find((u) => u.id === item.actorId);
+    if (!actor || !actor.pos) return;
+    setTimeout(() => {
+      if (item.kind === "comment") spawnBubble(actor, item.text);
+      else { spawnHeart(actor.pos); playNotifySound(); }
+    }, i * 500);
+  });
+}
+
 /* ---- background "activity" simulation: demo classmates occasionally
    comment/like the current user, so the live features are visible without
    needing a second real device. In production this comes from a realtime
@@ -1431,10 +1482,10 @@ function startActivitySimulation() {
     if (Math.random() > 0.5) {
       const text = sampleLines[Math.floor(Math.random() * sampleLines.length)];
       await Store.addComment(actor.id, App.me.id, text);
-      if (App.activeTab === "map") spawnBubble(actor, text);
+      showOrQueueActivity("comment", actor, text);
     } else {
       await Store.addLike(actor.id, App.me.id);
-      if (App.activeTab === "map") spawnHeart(actor.pos);
+      showOrQueueActivity("like", actor);
     }
     refreshNavDots();
   }, 28000);
@@ -1476,6 +1527,7 @@ async function switchTab(tab) {
     // _sizeCanvas for the actual root-cause fix).
     if (MapView.el) { MapView._sizeCanvas(); MapView._clampAndApply(); }
     renderMapPins();
+    flushPendingMapActivity();
   }
   if (tab === "comments") { await Store.markTabSeen("comments"); renderCommentsList(); }
   if (tab === "likes") { await Store.markTabSeen("likes"); renderLikesList(); }

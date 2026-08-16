@@ -1211,7 +1211,7 @@ async function openInfoCard(user) {
   card.querySelector(".profile-link").addEventListener("click", () => {
     closeInfoCard();
     if (user.id === App.me.id) { switchTab("profile"); }
-    else openOtherProfile(user.id);
+    else navigateToOtherProfile(user.id);
   });
 
   if (user.id !== App.me.id) {
@@ -1589,7 +1589,7 @@ function renderActivityList(containerSel, items, usersById, kind) {
   // Tapping anywhere on a row (not just the avatar) opens that person's
   // full profile — same profile screen the map pin's info card links to.
   $all(".activity-row", container).forEach((row) =>
-    row.addEventListener("click", () => openOtherProfile(row.dataset.userId))
+    row.addEventListener("click", () => navigateToOtherProfile(row.dataset.userId))
   );
 }
 
@@ -1779,9 +1779,62 @@ async function openBlockedModal() {
 /* ======================================================================
    OTHER USER PROFILE
    ====================================================================== */
+// Where the Back button (and the phone's own back button/gesture) should
+// return to after viewing someone's profile — set the moment we navigate
+// IN, so "back" always lands wherever the person actually came from
+// (map / a specific comments thread / a specific likes thread) instead of
+// unconditionally jumping to the map.
+let profileReturnTo = null;
+
 function wireOtherProfile() {
-  $("#btn-back-from-profile").addEventListener("click", () => switchTab("map"));
+  $("#btn-back-from-profile").addEventListener("click", () => {
+    // Just ask the browser to go back — the popstate listener below (set
+    // up wherever navigateToOtherProfile() pushed a history entry) is the
+    // single place that actually restores the previous screen, so the
+    // in-app Back button and the phone/browser's own back button behave
+    // identically instead of the button doing something different.
+    if (history.state && history.state.ccScreen === "other-profile") history.back();
+    else returnFromOtherProfile(); // no history entry (shouldn't normally happen) — restore directly
+  });
+  window.addEventListener("popstate", () => {
+    if ($("#screen-other-profile").classList.contains("active")) returnFromOtherProfile();
+  });
 }
+
+/** Entry point for actually navigating TO a profile (tapping a pin's info
+ *  card, a comment/like row, etc.) — captures exactly where we're coming
+ *  from and pushes a history entry so the back button has something to
+ *  pop. Internal same-screen refreshes (after adding a friend / blocking)
+ *  call openOtherProfile() directly instead, since those aren't really
+ *  "navigating" anywhere new. */
+function navigateToOtherProfile(userId) {
+  const onList = App.activeTab === "comments" || App.activeTab === "likes";
+  profileReturnTo = {
+    tab: App.activeTab,
+    threadUser: App.activeTab === "comments" ? App.commentThreadUser : App.activeTab === "likes" ? App.likeThreadUser : null,
+    scrollY: onList ? ($("#" + App.activeTab + "-list-wrap")?.scrollTop || 0) : 0,
+  };
+  history.pushState({ ccScreen: "other-profile" }, "", "");
+  openOtherProfile(userId);
+}
+
+function returnFromOtherProfile() {
+  const ret = profileReturnTo || { tab: "map" };
+  profileReturnTo = null;
+  if (ret.tab === "comments") App.commentThreadUser = ret.threadUser;
+  if (ret.tab === "likes") App.likeThreadUser = ret.threadUser;
+  switchTab(ret.tab);
+  if (ret.scrollY) {
+    // Restore scroll after the list has actually re-rendered — right after
+    // switchTab() the wrap is still empty for a beat while renderCommentsList/
+    // renderLikesList (both async) finish filling it back in.
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      const wrap = $("#" + ret.tab + "-list-wrap");
+      if (wrap) wrap.scrollTop = ret.scrollY;
+    }));
+  }
+}
+
 async function openOtherProfile(userId) {
   const all = await Store.allUsers();
   const u = all.find((x) => x.id === userId);

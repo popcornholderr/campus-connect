@@ -28,12 +28,7 @@ create table if not exists public.users (
   onboarded boolean default false,
   last_seen bigint,
   friends uuid[] default '{}',
-  blocked uuid[] default '{}',
-  -- Off by default: whether this student is visible on the "Everyone" map
-  -- scope (anyone on the app, not just group-mates). Gated behind an
-  -- explicit "Start Everyone-ing" confirmation in the app — never flipped
-  -- on silently.
-  everyone_mode boolean default false
+  blocked uuid[] default '{}'
 );
 
 -- Case-insensitive username uniqueness (only enforced once a username is set)
@@ -61,32 +56,6 @@ create table if not exists public.likes (
 create index if not exists likes_to_id_ts_idx on public.likes (to_id, ts desc);
 create index if not exists likes_from_id_ts_idx on public.likes (from_id, ts desc);
 
--- ---------- groups ----------
--- Replaces the old plain "Friends" map-visibility scope: a group is a
--- private circle where only its members can see each other on the map.
--- Joining requires the admin (whoever created it) to send an invite, which
--- the invitee has to accept — same shape as a WhatsApp group invite.
-create table if not exists public.groups (
-  id uuid primary key default gen_random_uuid(),
-  name text not null check (char_length(name) <= 60),
-  admin_id uuid references public.users (id) on delete set null,
-  member_ids uuid[] not null default '{}',
-  created_at bigint not null
-);
-create index if not exists groups_member_ids_idx on public.groups using gin (member_ids);
-
--- ---------- group_invites ----------
-create table if not exists public.group_invites (
-  id uuid primary key default gen_random_uuid(),
-  group_id uuid references public.groups (id) on delete cascade not null,
-  group_name text not null, -- denormalized so a declined/old invite still shows a name after the group's own name changes
-  from_id uuid references public.users (id) on delete cascade not null,
-  to_id uuid references public.users (id) on delete cascade not null,
-  status text not null default 'pending' check (status in ('pending','accepted','declined')),
-  created_at bigint not null
-);
-create index if not exists group_invites_to_id_status_idx on public.group_invites (to_id, status);
-
 -- ============================================================================
 -- Row Level Security — this is what actually enforces "only real
 -- darshan.ac.in students, and only the two people in a conversation can
@@ -95,8 +64,6 @@ create index if not exists group_invites_to_id_status_idx on public.group_invite
 alter table public.users enable row level security;
 alter table public.comments enable row level security;
 alter table public.likes enable row level security;
-alter table public.groups enable row level security;
-alter table public.group_invites enable row level security;
 
 -- users: any signed-in darshan.ac.in student can read the directory (needed
 -- for the map, search, and friends list). A user can only create/edit their
@@ -135,43 +102,6 @@ create policy "likes insert as self only"
   on public.likes for insert
   with check (auth.uid() = from_id and (auth.jwt() ->> 'email') like '%@darshan.ac.in');
 
--- groups: only members (or the admin) can read a group's row, so a group's
--- membership list — and therefore who's visible to whom on the map — is
--- enforced here, not just by the app's own filtering. Only the admin can
--- rename/change membership directly; regular members join/leave only
--- through the group_invites flow below (accepting an invite / leaving),
--- both of which go through this same "own row" check since leaving/joining
--- is really just a member updating the member_ids array on their own
--- membership's behalf — enforced app-side by only ever adding/removing the
--- signed-in user's own id in that array before writing.
-create policy "groups readable by members or admin"
-  on public.groups for select
-  using (auth.uid() = admin_id or auth.uid() = any(member_ids));
-
-create policy "groups insert as own admin"
-  on public.groups for insert
-  with check (auth.uid() = admin_id and (auth.jwt() ->> 'email') like '%@darshan.ac.in');
-
-create policy "groups update by members or admin"
-  on public.groups for update
-  using (auth.uid() = admin_id or auth.uid() = any(member_ids));
-
--- group_invites: only the sender and recipient of an invite can see it.
--- Anyone can send an invite as themselves; only the recipient can change
--- its status (accept/decline).
-create policy "group invites readable by sender or recipient"
-  on public.group_invites for select
-  using (auth.uid() = from_id or auth.uid() = to_id);
-
-create policy "group invites insert as self only"
-  on public.group_invites for insert
-  with check (auth.uid() = from_id and (auth.jwt() ->> 'email') like '%@darshan.ac.in');
-
-create policy "group invites respond as recipient only"
-  on public.group_invites for update
-  using (auth.uid() = to_id)
-  with check (auth.uid() = to_id);
-
 -- ============================================================================
 -- Realtime — without this, subscribeUsers()/subscribeMyActivity() in
 -- js/store.supabase.js have nothing to attach to: the map's live pin
@@ -181,8 +111,6 @@ create policy "group invites respond as recipient only"
 alter publication supabase_realtime add table public.users;
 alter publication supabase_realtime add table public.comments;
 alter publication supabase_realtime add table public.likes;
-alter publication supabase_realtime add table public.groups;
-alter publication supabase_realtime add table public.group_invites;
 
 -- ============================================================================
 -- Storage: profile photo bucket + policies

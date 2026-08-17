@@ -78,7 +78,6 @@ function rowToUser(r) {
     social: r.social || "", pos: r.pos || { x: 0.35, y: 0.55 }, active: r.active !== false,
     onboarded: !!r.onboarded, lastSeen: r.last_seen || Date.now(),
     friends: r.friends || [], blocked: r.blocked || [],
-    everyoneMode: !!r.everyone_mode,
   };
 }
 function userToRow(u) {
@@ -90,7 +89,6 @@ function userToRow(u) {
     relationship: u.relationship || "", phone: u.phone || "", social: u.social || "",
     pos: u.pos || { x: 0.35, y: 0.55 }, active: u.active !== false, onboarded: !!u.onboarded,
     last_seen: u.lastSeen || Date.now(), friends: u.friends || [], blocked: u.blocked || [],
-    everyone_mode: !!u.everyoneMode,
   };
 }
 
@@ -273,78 +271,6 @@ const Store = {
       .subscribe();
     return () => { sb.removeChannel(chComments); sb.removeChannel(chLikes); };
   },
-
-  /* ----------------------------------------------------------------------
-     Everyone mode — see supabase/schema.sql for the `everyone_mode` column.
-     ---------------------------------------------------------------------- */
-  async setEveryoneMode(userId, enabled) {
-    await sb.from("users").update({ everyone_mode: !!enabled }).eq("id", userId);
-  },
-
-  /* ----------------------------------------------------------------------
-     Groups — see supabase/schema.sql for the `groups` / `group_invites`
-     tables and their RLS policies (a group's member_ids is only readable/
-     writable by existing members + the admin; invites are only visible to
-     their sender and recipient).
-     ---------------------------------------------------------------------- */
-  async createGroup(name, adminId) {
-    const { data, error } = await sb.from("groups")
-      .insert({ name, admin_id: adminId, member_ids: [adminId], created_at: Date.now() })
-      .select().single();
-    if (error) throw new Error(error.message || "Couldn't create the group");
-    return { id: data.id, name: data.name, adminId: data.admin_id, memberIds: data.member_ids, createdAt: data.created_at };
-  },
-  async getGroup(groupId) {
-    const { data } = await sb.from("groups").select("*").eq("id", groupId).maybeSingle();
-    if (!data) return null;
-    return { id: data.id, name: data.name, adminId: data.admin_id, memberIds: data.member_ids, createdAt: data.created_at };
-  },
-  async getMyGroups(userId) {
-    const { data } = await sb.from("groups").select("*").contains("member_ids", [userId]);
-    return (data || []).map((g) => ({ id: g.id, name: g.name, adminId: g.admin_id, memberIds: g.member_ids, createdAt: g.created_at }));
-  },
-  async inviteToGroup(groupId, fromId, toId) {
-    const group = await Store.getGroup(groupId);
-    if (!group) throw new Error("Group not found");
-    if (group.memberIds.includes(toId)) throw new Error("Already in this group");
-    const { data: existing } = await sb.from("group_invites").select("*")
-      .eq("group_id", groupId).eq("to_id", toId).eq("status", "pending").maybeSingle();
-    if (existing) return { id: existing.id, groupId, groupName: group.name, fromId: existing.from_id, toId, status: "pending", createdAt: existing.created_at };
-    const { data, error } = await sb.from("group_invites")
-      .insert({ group_id: groupId, group_name: group.name, from_id: fromId, to_id: toId, status: "pending", created_at: Date.now() })
-      .select().single();
-    if (error) throw new Error(error.message || "Couldn't send the invite");
-    return { id: data.id, groupId: data.group_id, groupName: data.group_name, fromId: data.from_id, toId: data.to_id, status: data.status, createdAt: data.created_at };
-  },
-  async getPendingInvites(userId) {
-    const { data } = await sb.from("group_invites").select("*")
-      .eq("to_id", userId).eq("status", "pending").order("created_at", { ascending: false });
-    return (data || []).map((i) => ({ id: i.id, groupId: i.group_id, groupName: i.group_name, fromId: i.from_id, toId: i.to_id, status: i.status, createdAt: i.created_at }));
-  },
-  async respondToInvite(inviteId, accept) {
-    const { data: invite } = await sb.from("group_invites").select("*").eq("id", inviteId).maybeSingle();
-    if (!invite) return null;
-    await sb.from("group_invites").update({ status: accept ? "accepted" : "declined" }).eq("id", inviteId);
-    if (accept) {
-      const group = await Store.getGroup(invite.group_id);
-      if (group && !group.memberIds.includes(invite.to_id)) {
-        await sb.from("groups").update({ member_ids: [...group.memberIds, invite.to_id] }).eq("id", invite.group_id);
-      }
-    }
-    return invite;
-  },
-  async leaveGroup(groupId, userId) {
-    const group = await Store.getGroup(groupId);
-    if (!group) return;
-    const memberIds = group.memberIds.filter((id) => id !== userId);
-    const adminId = group.adminId === userId ? (memberIds[0] || null) : group.adminId;
-    await sb.from("groups").update({ member_ids: memberIds, admin_id: adminId }).eq("id", groupId);
-  },
-  async removeGroupMember(groupId, memberId) {
-    const group = await Store.getGroup(groupId);
-    if (!group) return;
-    await sb.from("groups").update({ member_ids: group.memberIds.filter((id) => id !== memberId) }).eq("id", groupId);
-  },
 };
 
 /* ----------------------------------------------------------------------
@@ -397,7 +323,6 @@ const Auth = {
       branch: BRANCHES[0], semester: 1, placeType: "hostel", place: "", relationship: "",
       phone: "", social: "", pos: { x: 0.35, y: 0.55 }, active: true,
       onboarded: false, lastSeen: Date.now(), friends: [], blocked: [],
-      everyoneMode: false,
     };
     const { error: insErr } = await sb.from("users").insert(userToRow(fresh));
     if (insErr) return { loggedIn: false, user: null, error: insErr.message };

@@ -56,11 +56,6 @@ function seedDemoStudents() {
       pos: spots[i],
       active: i % 3 !== 0, // most are "active"
       lastSeen: Date.now() - i * 60000,
-      // Demo students default to visible-in-Everyone so the Everyone map
-      // isn't just empty out of the box — a real signed-up student starts
-      // with this off (see Auth.sendLoginLink) and has to explicitly opt
-      // in via the "Start Everyone-ing" gate.
-      everyoneMode: true,
     };
   });
 }
@@ -77,8 +72,6 @@ const Store = {
       comments: [], // {id, fromId, toId, text, ts}
       likes: [], // {id, fromId, toId, ts}
       seenTabs: { map: true, comments: true, likes: true }, // true = no red dot
-      groups: {}, // id -> {id, name, adminId, memberIds:[...], createdAt}
-      groupInvites: {}, // id -> {id, groupId, groupName, fromId, toId, status, createdAt}
     };
     seedDemoStudents().forEach((s) => (fresh.users[s.id] = s));
     localStorage.setItem(DB_KEY, JSON.stringify(fresh));
@@ -205,92 +198,6 @@ const Store = {
     const db = this._read();
     return db.seenTabs;
   },
-
-  /* ----------------------------------------------------------------------
-     Everyone mode — opt-in visibility to every user of the app, not just
-     people you've grouped up with. Off by default for real accounts (see
-     Auth.sendLoginLink); the map-scope UI gates turning this on behind an
-     explicit "Start Everyone-ing" confirmation (see app.js) rather than
-     ever flipping it silently.
-     ---------------------------------------------------------------------- */
-  async setEveryoneMode(userId, enabled) {
-    const db = this._read();
-    if (db.users[userId]) { db.users[userId].everyoneMode = enabled; this._write(db); }
-  },
-
-  /* ----------------------------------------------------------------------
-     Groups — replaces the old plain "Friends" map-visibility scope. A
-     group is a private circle: only its members can see each other on the
-     map. Joining requires the admin (the person who created it) to invite
-     you, and you have to accept — same shape as a WhatsApp group invite.
-     ---------------------------------------------------------------------- */
-  async createGroup(name, adminId) {
-    const db = this._read();
-    const id = "g" + Date.now() + Math.random().toString(16).slice(2);
-    const group = { id, name, adminId, memberIds: [adminId], createdAt: Date.now() };
-    db.groups[id] = group;
-    this._write(db);
-    return group;
-  },
-  async getGroup(groupId) {
-    const db = this._read();
-    return db.groups[groupId] || null;
-  },
-  async getMyGroups(userId) {
-    const db = this._read();
-    return Object.values(db.groups).filter((g) => g.memberIds.includes(userId));
-  },
-  async inviteToGroup(groupId, fromId, toId) {
-    const db = this._read();
-    const group = db.groups[groupId];
-    if (!group) throw new Error("Group not found");
-    if (group.memberIds.includes(toId)) throw new Error("Already in this group");
-    const dup = Object.values(db.groupInvites).find(
-      (i) => i.groupId === groupId && i.toId === toId && i.status === "pending"
-    );
-    if (dup) return dup;
-    const id = "gi" + Date.now() + Math.random().toString(16).slice(2);
-    const invite = { id, groupId, groupName: group.name, fromId, toId, status: "pending", createdAt: Date.now() };
-    db.groupInvites[id] = invite;
-    this._write(db);
-    return invite;
-  },
-  async getPendingInvites(userId) {
-    const db = this._read();
-    return Object.values(db.groupInvites).filter((i) => i.toId === userId && i.status === "pending")
-      .sort((a, b) => b.createdAt - a.createdAt);
-  },
-  async respondToInvite(inviteId, accept) {
-    const db = this._read();
-    const invite = db.groupInvites[inviteId];
-    if (!invite) return null;
-    invite.status = accept ? "accepted" : "declined";
-    if (accept) {
-      const group = db.groups[invite.groupId];
-      if (group && !group.memberIds.includes(invite.toId)) group.memberIds.push(invite.toId);
-    }
-    this._write(db);
-    return invite;
-  },
-  async leaveGroup(groupId, userId) {
-    const db = this._read();
-    const group = db.groups[groupId];
-    if (!group) return;
-    group.memberIds = group.memberIds.filter((id) => id !== userId);
-    // If the admin leaves, hand admin status to whoever's left instead of
-    // leaving the group leaderless — mirrors how most group-chat apps
-    // handle it. If they were the last member, the group just sits empty;
-    // nothing else references it once no one's in it.
-    if (group.adminId === userId) group.adminId = group.memberIds[0] || null;
-    this._write(db);
-  },
-  async removeGroupMember(groupId, memberId) {
-    const db = this._read();
-    const group = db.groups[groupId];
-    if (!group) return;
-    group.memberIds = group.memberIds.filter((id) => id !== memberId);
-    this._write(db);
-  },
 };
 
 /* ----------------------------------------------------------------------
@@ -312,8 +219,6 @@ const Auth = {
         semester: 1, placeType: "hostel", place: "", relationship: "",
         phone: "", social: "", pos: { x: 0.35, y: 0.55 }, active: true,
         onboarded: false, lastSeen: Date.now(),
-        // Off by default — see Store.setEveryoneMode.
-        everyoneMode: false,
       };
       await Store.saveUser(user);
     }

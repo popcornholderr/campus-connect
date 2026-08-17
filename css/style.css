@@ -1,50 +1,36 @@
 /* ============================================================================
-   style.css — "Campus Connect" — "Night Campus" theme
-   Design language: a deep indigo-navy base instead of the old cream paper,
-   dark frosted "Liquid Glass" panels (the way iOS genuinely renders
-   translucent material in dark mode — smoky glass with a bright white
-   catch-light along the top edge, not a light panel bolted onto a dark
-   app), and a three-color accent system used with real intent: violet
-   for anything primary/selected, coral for live/unread signals, hot pink
-   for likes, cyan reserved for location/"you are here" moments. A
-   geometric grotesk display face (Space Grotesk) replaces the old warm
-   editorial serif — the app reads as a live campus-at-night map product,
-   not a lifestyle magazine.
+   style.css — "Campus Connect"
+   Design language: quiet, editorial, fashion-house white space. A near-white
+   canvas, ink-black type, one warm signal color reserved only for live /
+   unread indicators, and a soft rose for likes. Display serif for headings
+   (editorial confidence), a clean grotesk for body/UI (does the work).
    ========================================================================== */
 
-@import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,500&family=Manrope:wght@400;500;600;700;800&display=swap");
 
 :root {
-  --paper: #090b13;          /* app background — near-black indigo */
-  --surface: #141a2b;        /* cards, inputs, list rows */
-  --surface-2: #1c2338;      /* elevated: modals, toast, popovers */
-  --ink: #f3f4fa;            /* primary text — near-white, cool tint */
-  --ink-soft: #a3a8c4;       /* secondary text */
-  --ink-faint: #666c8c;      /* tertiary text / placeholders */
-  --ink-on-light: #15151a;   /* guaranteed-dark text for surfaces that stay
-                                 explicitly light regardless of theme (the
-                                 Google button, a pin's white avatar disc) */
-  --ink-on-light-soft: #6f6e77;
-  --line: #242c46;           /* hairlines */
-  --line-soft: #1a2136;      /* softer hairlines / fills */
-  --signal: #ff6a4d;         /* live / unread / active — warm coral pop */
-  --signal-soft: rgba(255, 106, 77, 0.16);
-  --rose: #ff3d81;           /* likes */
-  --rose-soft: rgba(255, 61, 129, 0.16);
-  --success: #34d399;
-  --accent: #8b6cff;         /* primary brand violet — CTAs, selected states */
-  --accent-soft: rgba(139, 108, 255, 0.16);
-  --accent-2: #22d3ee;       /* secondary cyan — location / "you are here" */
+  --paper: #faf9f7;
+  --surface: #ffffff;
+  --ink: #15151a;
+  --ink-soft: #6f6e77;
+  --ink-faint: #a6a4ac;
+  --line: #e8e6e1;
+  --line-soft: #f0eee9;
+  --signal: #e0472c;       /* live / unread / active */
+  --signal-soft: #fdece8;
+  --rose: #ff5c86;         /* likes */
+  --rose-soft: #ffe9ef;
+  --success: #2f6d4f;
 
   --radius-s: 10px;
   --radius-m: 16px;
   --radius-l: 26px;
   --radius-pill: 999px;
 
-  --shadow-card: 0 1px 2px rgba(0,0,0,0.35), 0 8px 24px -12px rgba(0,0,0,0.55);
-  --shadow-float: 0 20px 44px -10px rgba(0,0,0,0.65);
+  --shadow-card: 0 1px 2px rgba(20,20,25,0.04), 0 8px 24px -12px rgba(20,20,25,0.12);
+  --shadow-float: 0 12px 32px -8px rgba(20,20,25,0.22);
 
-  --font-display: "Space Grotesk", -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-display: "Fraunces", "Iowan Old Style", serif;
   --font-body: "Manrope", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
@@ -53,7 +39,7 @@ html, body { height: 100%; overscroll-behavior: none; }
 body {
   margin: 0;
   font-family: var(--font-body);
-  background: #04050a;
+  background: #ece9e2;
   color: var(--ink);
   -webkit-font-smoothing: antialiased;
   /* The whole app handles its own zooming on the map (see .map-scroll) —
@@ -302,7 +288,7 @@ p { margin: 0; line-height: 1.5; }
 .scope-toggle { display: flex; background: var(--line-soft); border-radius: var(--radius-pill); padding: 2px; }
 .scope-toggle.glass {
   /* Bumped from 0.55 -> 0.8 opacity: over a busy aerial-photo map, the old
-     see-through glass let the unselected "Groups" label wash out against
+     see-through glass let the unselected "Friends" label wash out against
      whatever was underneath it (bright ground, light rooftops, etc). A
      more opaque pill reads as a solid control on any background. */
   background: rgba(255, 255, 255, 0.8);
@@ -314,7 +300,7 @@ p { margin: 0; line-height: 1.5; }
   border: none; background: transparent; padding: 4px 7px; border-radius: var(--radius-pill);
   font-family: var(--font-body); font-size: 10px; font-weight: 700; cursor: pointer;
   /* Darker + bolder than the old ink-soft grey so the unselected label
-     ("Groups") stays legible against any part of the map photo, not just
+     ("Friends") stays legible against any part of the map photo, not just
      the plain paper background it was designed against. */
   color: rgba(21, 21, 26, 0.68);
 }
@@ -326,26 +312,25 @@ p { margin: 0; line-height: 1.5; }
 #screen-map { position: relative; }
 #screen-map .topbar {
   position: absolute; left: 0; right: 0; top: 0; z-index: 15;
-  /* Solid white bar behind the logo + Everyone/Groups switch, instead of
+  /* Solid white bar behind the logo + Everyone/Friends switch, instead of
      floating transparently over the map photo — per feedback, gives that
      row a clean, readable backing regardless of what's underneath it. */
   background: var(--paper);
   padding: calc(12px + env(safe-area-inset-top)) 14px 10px;
   box-shadow: 0 1px 0 rgba(20,20,25,0.06);
   /* Was display:flex + justify-content:space-between with 3 children,
-     the 3rd (#btn-manage-group, only shown when you're an admin viewing
-     your own group) toggling display:none/"" depending on scope.
-     space-between only distributes space between whatever's actually
-     visible, so hiding that 3rd item yanked the scope-toggle from the
-     middle all the way over to the right edge — "the switch keeps
-     changing position." A 3-column grid gives each item a fixed slot
-     regardless of whether the 3rd one has anything in it, so the toggle's
-     position never depends on sibling visibility. */
+     the 3rd (#btn-edit-friends) toggling display:none/"" depending on
+     scope. space-between only distributes space between whatever's
+     actually visible, so hiding that 3rd item yanked the scope-toggle
+     from the middle all the way over to the right edge — "the switch
+     keeps changing position." A 3-column grid gives each item a fixed
+     slot regardless of whether the 3rd one has anything in it, so the
+     toggle's position never depends on sibling visibility. */
   display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 10px;
 }
 #screen-map .topbar .brand-mark { justify-self: start; }
 #screen-map .topbar .scope-toggle { justify-self: center; }
-#screen-map .topbar #btn-manage-group { justify-self: end; }
+#screen-map .topbar #btn-edit-friends { justify-self: end; }
 #screen-map .topbar .scope-toggle,
 #screen-map .topbar .brand-mark {
   border-radius: 20px;
@@ -431,13 +416,14 @@ p { margin: 0; line-height: 1.5; }
   position: absolute; transform: translate(-50%, -100%); cursor: pointer; z-index: 3;
   transition: left .6s linear, top .6s linear;
 }
-/* Your own pin sits BELOW everyone else's when pins overlap — you already
-   know where you are; what you're trying to tap in a crowd is almost
-   always someone else. Without this, whichever pin happened to render
-   last in the DOM (which was consistently your own — see the comment on
-   visible.push(App.me) in renderMapPins()) sat on top and silently ate
-   every tap aimed at the person standing right next to you. */
+/* Your own pin always renders LAST in renderMapPins() (see app.js), so
+   without an explicit override it would sit on top of the DOM stack and
+   "win" ties whenever another user's pin overlaps it — a tap meant for
+   their pin would land on yours instead. Pin it one layer below everyone
+   else so a neighboring pin is always the one that catches the tap.
+   Highlighted pins (from search) still need to win over a plain pin. */
 .pin.me { z-index: 2; }
+.pin.highlight { z-index: 4; }
 /* Counter-scale wrapper: .pin's own translate(-50%,-100%) anchors the tip
    of the pin exactly at the map coordinate and is left untouched by zoom;
    this inner element is the only thing that scales, pivoting around its
@@ -745,22 +731,29 @@ p { margin: 0; line-height: 1.5; }
    JS (see moveNavPill() in app.js), which is why left/width aren't set
    here — JS measures the actual button and sets --pill-x/--pill-w. */
 .nav-active-pill {
-  position: absolute; top: 4px; bottom: 4px; left: 0;
-  width: var(--pill-w, 52px);
-  transform: translateX(var(--pill-x, 0px));
-  border-radius: 14px;
+  /* Fixed diameter circle (not tied to the button's box width/height,
+     which aren't equal) so it's a true circle rather than a rounded
+     rectangle. Centered on the active button both horizontally and
+     vertically — moveNavPill() in app.js now sets --pill-x to the
+     button's center-x minus half the diameter, and --pill-w doubles as
+     the circle's diameter for both width and height. */
+  position: absolute; top: 50%; left: 0;
+  width: var(--pill-w, 40px);
+  height: var(--pill-w, 40px);
+  transform: translate(var(--pill-x, 0px), -50%);
+  border-radius: 50%;
   background: rgba(255, 255, 255, 0.65);
   box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.95), 0 2px 10px -2px rgba(20, 20, 25, 0.18);
-  transition: transform 0.38s cubic-bezier(0.22, 1, 0.36, 1), width 0.38s cubic-bezier(0.22, 1, 0.36, 1);
+  transition: transform 0.38s cubic-bezier(0.22, 1, 0.36, 1);
   pointer-events: none;
   z-index: 0;
 }
 .bottom-nav button {
   flex: 0 1 52px; background: none; border: none; display: flex; flex-direction: column; align-items: center; justify-content: center;
-  padding: 6px 0; cursor: pointer; position: relative; color: var(--ink-soft);
+  padding: 6px 0; cursor: pointer; position: relative; color: #000; opacity: 0.5;
   z-index: 1; /* sits above the sheen (::before) and the sliding pill */
 }
-.bottom-nav button.active { color: var(--ink); }
+.bottom-nav button.active { color: #000; opacity: 1; }
 /* Labels removed per feedback — icon-only, slimmer bar. Kept in the DOM
    (just hidden) rather than deleted from index.html so screen readers /
    future re-enabling aren't affected. */

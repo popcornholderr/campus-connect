@@ -28,12 +28,21 @@ create table if not exists public.users (
   onboarded boolean default false,
   last_seen bigint,
   friends uuid[] default '{}',
-  blocked uuid[] default '{}'
+  blocked uuid[] default '{}',
+  -- "everyone"  -> pin is visible on the shared Everyone map.
+  -- "friends"   -> Friends only mode: pin is hidden from the Everyone map
+  --                and only visible inside the maps of groups this person
+  --                is a member of.
+  mode text default 'everyone'
 );
 
 -- Case-insensitive username uniqueness (only enforced once a username is set)
 create unique index if not exists users_username_lower_idx
   on public.users (username_lower) where username_lower <> '';
+
+-- Safe to re-run: adds the mode column to a users table that already
+-- existed before Friends only mode / groups were introduced.
+alter table public.users add column if not exists mode text default 'everyone';
 
 -- ---------- comments ----------
 create table if not exists public.comments (
@@ -56,6 +65,28 @@ create table if not exists public.likes (
 create index if not exists likes_to_id_ts_idx on public.likes (to_id, ts desc);
 create index if not exists likes_from_id_ts_idx on public.likes (from_id, ts desc);
 
+-- ---------- groups (Friends only mode) ----------
+create table if not exists public.groups (
+  id uuid primary key default gen_random_uuid(),
+  name text not null check (char_length(name) <= 40),
+  owner_id uuid references public.users (id) on delete cascade not null,
+  member_ids uuid[] default '{}',
+  created_at bigint not null
+);
+create index if not exists groups_member_ids_idx on public.groups using gin (member_ids);
+
+-- ---------- group_invites ----------
+create table if not exists public.group_invites (
+  id uuid primary key default gen_random_uuid(),
+  group_id uuid references public.groups (id) on delete cascade not null,
+  group_name text default '',
+  from_id uuid references public.users (id) on delete cascade not null,
+  to_id uuid references public.users (id) on delete cascade not null,
+  status text default 'pending', -- pending | accepted | declined
+  created_at bigint not null
+);
+create index if not exists group_invites_to_id_status_idx on public.group_invites (to_id, status);
+
 -- ============================================================================
 -- Row Level Security — this is what actually enforces "only real
 -- darshan.ac.in students, and only the two people in a conversation can
@@ -64,6 +95,8 @@ create index if not exists likes_from_id_ts_idx on public.likes (from_id, ts des
 alter table public.users enable row level security;
 alter table public.comments enable row level security;
 alter table public.likes enable row level security;
+alter table public.groups enable row level security;
+alter table public.group_invites enable row level security;
 
 -- users: any signed-in darshan.ac.in student can read the directory (needed
 -- for the map, search, and friends list). A user can only create/edit their
@@ -102,6 +135,50 @@ create policy "likes insert as self only"
   on public.likes for insert
   with check (auth.uid() = from_id and (auth.jwt() ->> 'email') like '%@darshan.ac.in');
 
+-- groups: any signed-in darshan student can read a group they own, belong
+-- to, or have a pending invite to (that last one is what lets the invite
+-- accept flow show/join the group before membership exists yet). A group
+-- can only be created with yourself as the owner. Updates (used to append
+-- yourself to member_ids when you accept an invite) are allowed for the
+-- owner, existing members, or someone with a pending invite to that group.
+create policy "groups readable by owner, members or invitees"
+  on public.groups for select
+  using (
+    auth.uid() = owner_id or auth.uid() = any(member_ids) or
+    exists (select 1 from public.group_invites gi where gi.group_id = groups.id and gi.to_id = auth.uid())
+  );
+
+create policy "groups insert as owner"
+  on public.groups for insert
+  with check (auth.uid() = owner_id and (auth.jwt() ->> 'email') like '%@darshan.ac.in');
+
+create policy "groups update by owner, members or invitees"
+  on public.groups for update
+  using (
+    auth.uid() = owner_id or auth.uid() = any(member_ids) or
+    exists (select 1 from public.group_invites gi where gi.group_id = groups.id and gi.to_id = auth.uid() and gi.status = 'pending')
+  )
+  with check (true);
+
+-- group_invites: only the two people in an invite can read it. Only an
+-- existing group member (or the owner) can send one, as themselves. Only
+-- the invited person can respond (accept/decline updates status).
+create policy "invites readable by participants only"
+  on public.group_invites for select
+  using (auth.uid() = from_id or auth.uid() = to_id);
+
+create policy "invites insert by group members only"
+  on public.group_invites for insert
+  with check (
+    auth.uid() = from_id and (auth.jwt() ->> 'email') like '%@darshan.ac.in' and
+    exists (select 1 from public.groups g where g.id = group_id and (g.owner_id = auth.uid() or auth.uid() = any(g.member_ids)))
+  );
+
+create policy "invites update by recipient only"
+  on public.group_invites for update
+  using (auth.uid() = to_id)
+  with check (auth.uid() = to_id);
+
 -- ============================================================================
 -- Realtime — without this, subscribeUsers()/subscribeMyActivity() in
 -- js/store.supabase.js have nothing to attach to: the map's live pin
@@ -111,6 +188,8 @@ create policy "likes insert as self only"
 alter publication supabase_realtime add table public.users;
 alter publication supabase_realtime add table public.comments;
 alter publication supabase_realtime add table public.likes;
+alter publication supabase_realtime add table public.groups;
+alter publication supabase_realtime add table public.group_invites;
 
 -- ============================================================================
 -- Storage: profile photo bucket + policies

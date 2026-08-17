@@ -87,7 +87,8 @@ button, .row-btn, .pill-toggle button, .scope-toggle button, .search-row,
 button:active:not(:disabled), .row-btn:active, .pill-toggle button:active,
 .scope-toggle button:active, .search-row:active, .friend-row button:active,
 .bottom-nav button:active, .block-list-item button:active,
-.info-card .actions button:active, .info-card .comment-box button:active {
+.info-card .actions button:active, .info-card .comment-box button:active,
+.btn-icon:active, .row-invite-btn:active, .group-row:active {
   transform: scale(0.95);
   opacity: 0.82;
 }
@@ -330,13 +331,24 @@ p { margin: 0; line-height: 1.5; }
 }
 #screen-map .topbar .brand-mark { justify-self: start; }
 #screen-map .topbar .scope-toggle { justify-self: center; }
-#screen-map .topbar #btn-edit-friends { justify-self: end; }
 #screen-map .topbar .scope-toggle,
 #screen-map .topbar .brand-mark {
   border-radius: 20px;
   padding: 3px 6px;
 }
 #screen-map .topbar .brand-mark { padding: 4px 10px; }
+
+/* Group map bar — replaces the brand-mark + Everyone/Friends switch while
+   looking at one specific group's map (see openGroupMap()/closeGroupMap()
+   in app.js). Occupies the same grid row, spanning all 3 columns, so it
+   doesn't need its own layout pass. */
+.group-map-bar { display: none; grid-column: 1 / -1; align-items: center; justify-content: space-between; gap: 8px; }
+#map-topbar.group-mode .brand-mark,
+#map-topbar.group-mode .scope-toggle { display: none; }
+#map-topbar.group-mode .group-map-bar { display: flex; }
+.group-map-title { font-family: var(--font-display); font-weight: 800; font-size: 15px; flex: 1; text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.group-map-bar .btn-text { white-space: nowrap; flex-shrink: 0; }
+
 /* Search bar shrunk to 70% width and centered (was spanning nearly the
    full screen). Top offset increased to open up a clear vertical gap
    below the Everyone/Friends switch instead of the two sitting almost
@@ -777,7 +789,7 @@ p { margin: 0; line-height: 1.5; }
 .modal-sheet.show { transform: translateY(0); }
 .modal-head { padding: 16px 18px 10px; display: flex; align-items: center; justify-content: space-between; }
 .modal-head h3 { font-size: 17px; }
-.modal-head button { border: none; background: var(--line-soft); width: 30px; height: 30px; border-radius: 50%; cursor: pointer; }
+.modal-head button { border: none; background: var(--line-soft); width: 30px; height: 30px; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; color: var(--ink); }
 .modal-body { padding: 4px 18px 26px; overflow-y: auto; }
 
 .friend-row { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--line-soft); }
@@ -788,6 +800,42 @@ p { margin: 0; line-height: 1.5; }
 .friend-row .meta .s { font-size: 11px; color: var(--ink-soft); }
 .friend-row button { border: 1px solid var(--line); background: var(--surface); border-radius: var(--radius-pill); padding: 7px 13px; font-size: 11.5px; font-weight: 700; cursor: pointer; }
 .friend-row button.added { background: var(--ink); color: #fff; border-color: var(--ink); }
+
+/* ---------- Friends only mode: groups list, group rows, inbox icon ---------- */
+.group-row { display: flex; align-items: center; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--line-soft); cursor: pointer; }
+.group-row:active { background: var(--line-soft); }
+.group-av {
+  width: 44px; height: 44px; border-radius: 14px; flex-shrink: 0;
+  background: var(--line-soft); color: var(--ink-soft);
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--font-display); font-weight: 800; font-size: 14px;
+}
+.group-row .meta { flex: 1; min-width: 0; }
+.group-row .meta .n { font-size: 14px; font-weight: 700; }
+.group-row .meta .s { font-size: 11.5px; color: var(--ink-soft); margin-top: 1px; }
+.row-invite-btn {
+  border: 1px solid var(--line); background: var(--surface); border-radius: var(--radius-pill);
+  padding: 7px 13px; font-size: 11.5px; font-weight: 700; cursor: pointer; flex-shrink: 0;
+}
+
+/* Small round icon button used for the Friends only mode Inbox — mirrors
+   the modal close button's circular treatment, plus an unread dot like
+   the bottom nav's. */
+.btn-icon {
+  position: relative; border: none; background: var(--line-soft); color: var(--ink);
+  width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+  cursor: pointer; flex-shrink: 0;
+}
+.btn-icon .dot {
+  position: absolute; top: 2px; right: 2px; width: 8px; height: 8px; border-radius: 50%;
+  background: var(--signal); display: none; border: 1.5px solid var(--paper);
+}
+.btn-icon .dot.show { display: block; }
+
+/* "New group" FAB reuses .btn-locate-me's positioning/shape (see above) —
+   it just needs to live in #screen-groups instead of over the map. */
+#screen-groups { position: relative; }
+#btn-new-group { position: absolute; }
 
 .toast {
   position: absolute; left: 50%; bottom: 90px; transform: translateX(-50%); z-index: 50;

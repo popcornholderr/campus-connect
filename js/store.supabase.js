@@ -77,7 +77,7 @@ function rowToUser(r) {
     place: r.place || "", relationship: r.relationship || "", phone: r.phone || "",
     social: r.social || "", pos: r.pos || { x: 0.35, y: 0.55 }, active: r.active !== false,
     onboarded: !!r.onboarded, lastSeen: r.last_seen || Date.now(),
-    friends: r.friends || [], blocked: r.blocked || [],
+    friends: r.friends || [], blocked: r.blocked || [], mode: r.mode || "everyone",
   };
 }
 function userToRow(u) {
@@ -89,7 +89,16 @@ function userToRow(u) {
     relationship: u.relationship || "", phone: u.phone || "", social: u.social || "",
     pos: u.pos || { x: 0.35, y: 0.55 }, active: u.active !== false, onboarded: !!u.onboarded,
     last_seen: u.lastSeen || Date.now(), friends: u.friends || [], blocked: u.blocked || [],
+    mode: u.mode || "everyone",
   };
+}
+function rowToGroup(r) {
+  if (!r) return null;
+  return { id: r.id, name: r.name, ownerId: r.owner_id, memberIds: r.member_ids || [], createdAt: r.created_at };
+}
+function rowToInvite(r) {
+  if (!r) return null;
+  return { id: r.id, groupId: r.group_id, groupName: r.group_name || "", fromId: r.from_id, toId: r.to_id, status: r.status, createdAt: r.created_at };
 }
 
 function withTimeout(promise, ms, label) {
@@ -176,6 +185,86 @@ const Store = {
   async setActive(id, active) {
     const patch = active ? { active: true, last_seen: Date.now() } : { active: false };
     await sb.from("users").update(patch).eq("id", id);
+  },
+
+  /** Switches a user between Everyone mode and Friends only mode. Setting
+   *  this to "friends" is what makes a pin vanish from everyone's Everyone
+   *  map (see the mode filter in renderMapPins(), js/app.js) — it stays
+   *  visible only inside the maps of groups this person belongs to. */
+  async setMode(userId, mode) {
+    await sb.from("users").update({ mode }).eq("id", userId);
+  },
+
+  /* ---------------------------------------------------------------- groups
+     Friends only mode's groups: each group has an owner + a list of member
+     ids. A group's map (rendered by renderMapPins() when App.currentGroupId
+     is set) only ever shows pins belonging to that group's members. */
+  async createGroup(ownerId, name) {
+    const { data, error } = await sb
+      .from("groups")
+      .insert({ owner_id: ownerId, name, member_ids: [ownerId], created_at: Date.now() })
+      .select()
+      .single();
+    if (error) throw new Error(error.message || "Couldn't create group");
+    return rowToGroup(data);
+  },
+  async getMyGroups(userId) {
+    const { data } = await sb.from("groups").select("*").contains("member_ids", [userId]);
+    return (data || []).map(rowToGroup);
+  },
+  async getGroup(groupId) {
+    const { data } = await sb.from("groups").select("*").eq("id", groupId).maybeSingle();
+    return rowToGroup(data);
+  },
+
+  /** Sends a group invite, unless one is already pending for that person. */
+  async inviteToGroup(groupId, fromId, toId) {
+    const { data: existing } = await sb
+      .from("group_invites").select("*")
+      .eq("group_id", groupId).eq("to_id", toId).eq("status", "pending");
+    if (existing && existing.length) return rowToInvite(existing[0]);
+    const group = await Store.getGroup(groupId);
+    const { data, error } = await sb
+      .from("group_invites")
+      .insert({ group_id: groupId, group_name: group ? group.name : "", from_id: fromId, to_id: toId, status: "pending", created_at: Date.now() })
+      .select()
+      .single();
+    if (error) throw new Error(error.message || "Couldn't send invite");
+    return rowToInvite(data);
+  },
+  /** Pending invites waiting on this person — shown in the Friends only
+   *  mode inbox. */
+  async getMyInvites(userId) {
+    const { data } = await sb
+      .from("group_invites").select("*")
+      .eq("to_id", userId).eq("status", "pending")
+      .order("created_at", { ascending: false });
+    return (data || []).map(rowToInvite);
+  },
+  async respondToInvite(inviteId, accept) {
+    const { data: invite } = await sb.from("group_invites").select("*").eq("id", inviteId).maybeSingle();
+    if (!invite) return;
+    await sb.from("group_invites").update({ status: accept ? "accepted" : "declined" }).eq("id", inviteId);
+    if (accept) {
+      const { data: group } = await sb.from("groups").select("member_ids").eq("id", invite.group_id).maybeSingle();
+      const members = (group && group.member_ids) || [];
+      if (!members.includes(invite.to_id)) {
+        await sb.from("groups").update({ member_ids: [...members, invite.to_id] }).eq("id", invite.group_id);
+      }
+    }
+  },
+  /** Realtime: any change to groups (new member, etc.) or a new invite
+   *  addressed to `userId` re-renders the groups list / inbox badge. */
+  subscribeGroupsAndInvites(userId, cb) {
+    const chGroups = sb
+      .channel("groups-live")
+      .on("postgres_changes", { event: "*", schema: "public", table: "groups" }, () => cb())
+      .subscribe();
+    const chInvites = sb
+      .channel("invites-live")
+      .on("postgres_changes", { event: "*", schema: "public", table: "group_invites", filter: `to_id=eq.${userId}` }, () => cb())
+      .subscribe();
+    return () => { sb.removeChannel(chGroups); sb.removeChannel(chInvites); };
   },
 
   async toggleFriend(userId, targetId) {
@@ -322,7 +411,7 @@ const Auth = {
       username: "", photo: session.user.user_metadata?.avatar_url || null, age: "",
       branch: BRANCHES[0], semester: 1, placeType: "hostel", place: "", relationship: "",
       phone: "", social: "", pos: { x: 0.35, y: 0.55 }, active: true,
-      onboarded: false, lastSeen: Date.now(), friends: [], blocked: [],
+      onboarded: false, lastSeen: Date.now(), friends: [], blocked: [], mode: "everyone",
     };
     const { error: insErr } = await sb.from("users").insert(userToRow(fresh));
     if (insErr) return { loggedIn: false, user: null, error: insErr.message };

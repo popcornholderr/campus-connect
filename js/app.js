@@ -6,6 +6,10 @@ const App = {
   me: null,
   regions: [],
   scope: "everyone",
+  // Set while looking at one specific group's map inside Friends only
+  // mode (see openGroupMap()/closeGroupMap()) — null the rest of the time,
+  // including while browsing the groups list itself.
+  currentGroupId: null,
   activeTab: "map",
   highlightedPinId: null,
   openInfoCardFor: null,
@@ -231,6 +235,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   wireProfileTab();
   wireOtherProfile();
   wireModals();
+  wireGroups();
   wireInstallScreen();
   registerServiceWorker();
 
@@ -259,7 +264,7 @@ function populateBranchSelect() {
 // signed-in, onboarded user — the bottom nav (Map/Comments/Likes/Profile)
 // should only ever be visible on these, never on install/login/onboarding/GPS.
 const SCREENS_WITH_BOTTOM_NAV = new Set([
-  "screen-map", "screen-comments", "screen-likes", "screen-profile", "screen-other-profile",
+  "screen-map", "screen-groups", "screen-comments", "screen-likes", "screen-profile", "screen-other-profile",
 ]);
 
 function goTo(screenId) {
@@ -519,13 +524,24 @@ let firstFixReceived = false;
 let locationTrackingStarted = false;
 let demoFallbackTimer = null;
 
+/** Right after GPS is confirmed, drop the person into whichever mode they
+ *  were last using — Everyone (with the map straight away) for a brand new
+ *  profile, since App.me.mode defaults to "everyone", or Friends only
+ *  mode's groups list if that's what they had open when they last closed
+ *  the app (App.me.mode is persisted the moment it's changed — see
+ *  setScope()). */
+function enterAppForCurrentMode() {
+  const mode = (App.me && App.me.mode) || "everyone";
+  setScope(mode);
+}
+
 function startLocationTracking() {
   // Guard against wiring this up more than once (e.g. the person backs
   // out to this screen and taps Allow again) — that used to register a
   // second set of listeners and could run a real GPS watch alongside a
   // leftover demo walk, fighting each other and making the pin jump
   // around instead of the "still not working" look staying consistent.
-  if (locationTrackingStarted) { goTo("screen-map"); return; }
+  if (locationTrackingStarted) { enterAppForCurrentMode(); return; }
   locationTrackingStarted = true;
 
   show($("#geo-loading"));
@@ -566,8 +582,7 @@ function startLocationTracking() {
     handleFix(fix);
   });
   Geo.start();
-  goTo("screen-map");
-  enterMapFirstTime();
+  enterAppForCurrentMode();
 
   // Safety net: if a real fix hasn't arrived in 4s (desktop browser / no GPS
   // hardware / permission dialog ignored), switch to the demo walk so the
@@ -633,20 +648,23 @@ async function handleFix(fix) {
 /* ======================================================================
    MAP SCREEN
    ====================================================================== */
-function enterMapFirstTime() {
-  // Deferred to first real appearance of the map (rather than at boot)
-  // because #map-scroll is display:none — and therefore has zero size —
-  // until its screen becomes active, which would make all the "cover the
-  // viewport" math below come out as zero.
-  if (!MapView.el) MapView.init($("#map-canvas"), $("#map-scroll"));
-  else { MapView._sizeCanvas(); MapView._clampAndApply(); }
-  renderMapPins();
+/** Starts realtime subscriptions + the stale-pin watch exactly once, no
+ *  matter which screen (Everyone map or Friends only mode's groups list)
+ *  the person lands on first — both need live updates, but only the map
+ *  screen itself also needs MapView initialized (see enterMapFirstTime). */
+let realtimeStarted = false;
+function startRealtimeAndActivity() {
+  if (realtimeStarted) return;
+  realtimeStarted = true;
   startStaleGpsWatch();
 
   if (typeof Store.subscribeUsers === "function") {
-    // Real backend mode: real students' pins update live as their position
-    // documents change, no polling needed.
-    Store.subscribeUsers(() => { if (App.activeTab === "map") renderMapPins(); });
+    // Real backend mode: real students' pins (and mode/group changes) update
+    // live, no polling needed.
+    Store.subscribeUsers(() => {
+      if (App.activeTab === "map" && App.scope === "everyone") renderMapPins();
+      if (App.activeTab === "map" && App.currentGroupId) renderMapPins();
+    });
   }
   if (typeof Store.subscribeMyActivity === "function" && App.me) {
     // Real backend mode: real comments/likes from other students land here
@@ -664,24 +682,102 @@ function enterMapFirstTime() {
     // Local demo mode: no real second user, so simulate classmate activity.
     startActivitySimulation();
   }
+  if (typeof Store.subscribeGroupsAndInvites === "function" && App.me) {
+    // Real backend mode: a new invite landing on us, or a group we're in
+    // changing (new member, etc.), refreshes the groups list / inbox badge
+    // / open group map live.
+    Store.subscribeGroupsAndInvites(App.me.id, () => {
+      renderInboxBadge();
+      if ($("#screen-groups").classList.contains("active")) renderGroupsList();
+      if (App.currentGroupId) renderMapPins();
+    });
+  }
   refreshNavDots();
+  renderInboxBadge();
+}
+
+function enterMapFirstTime() {
+  // Deferred to first real appearance of the map (rather than at boot)
+  // because #map-scroll is display:none — and therefore has zero size —
+  // until its screen becomes active, which would make all the "cover the
+  // viewport" math below come out as zero.
+  if (!MapView.el) MapView.init($("#map-canvas"), $("#map-scroll"));
+  else { MapView._sizeCanvas(); MapView._clampAndApply(); }
+  renderMapPins();
+  startRealtimeAndActivity();
+}
+
+/** Everyone mode vs. Friends only mode lives here — the single place that
+ *  decides which top-level screen to show, persists the choice (both to
+ *  App.me.mode locally and to the backend, via Store.setMode) so it's
+ *  remembered the next time the app opens, and — for Friends only mode —
+ *  makes the person's pin vanish from the shared Everyone map (handled by
+ *  the mode filter inside renderMapPins()). */
+async function setScope(scope) {
+  App.scope = scope;
+  App.currentGroupId = null;
+  hideGroupMapChrome();
+  $all(".scope-toggle button").forEach((b) => b.classList.toggle("selected", b.dataset.scope === scope));
+
+  if (App.me) {
+    App.me.mode = scope;
+    // Persisted immediately (not just on app-close) so the "vanish from
+    // Everyone's map" effect is instant for everyone else too, and so the
+    // last-used mode is already saved the moment it's chosen.
+    try { await Store.setMode(App.me.id, scope); } catch (err) { console.error("setMode failed:", err); }
+  }
+
+  App.activeTab = "map";
+  $all("#bottom-nav button").forEach((b) => b.classList.toggle("active", b.dataset.tab === "map"));
+
+  if (scope === "everyone") {
+    goTo("screen-map");
+    enterMapFirstTime();
+  } else {
+    goTo("screen-groups");
+    startRealtimeAndActivity();
+    renderGroupsList();
+  }
+}
+
+/** Shows/hides the map screen's topbar between "Everyone/Friends only
+ *  switch" and "‹ Groups / group name / Invite" (used while looking at one
+ *  specific group's map). */
+function hideGroupMapChrome() {
+  $("#map-topbar").classList.remove("group-mode");
+}
+
+async function openGroupMap(groupId) {
+  const group = await Store.getGroup(groupId);
+  if (!group) { toast("That group is no longer available."); return; }
+  App.currentGroupId = groupId;
+  $("#group-map-title").textContent = group.name;
+  $("#map-topbar").classList.add("group-mode");
+  App.activeTab = "map";
+  $all("#bottom-nav button").forEach((b) => b.classList.toggle("active", b.dataset.tab === "map"));
+  goTo("screen-map");
+  if (!MapView.el) MapView.init($("#map-canvas"), $("#map-scroll"));
+  else { MapView._sizeCanvas(); MapView._clampAndApply(); }
+  renderMapPins();
+  startRealtimeAndActivity();
+}
+
+function closeGroupMap() {
+  App.currentGroupId = null;
+  hideGroupMapChrome();
+  goTo("screen-groups");
+  renderGroupsList();
 }
 
 function wireMap() {
-  $all("#scope-toggle button").forEach((b) => {
-    b.addEventListener("click", () => {
-      $all("#scope-toggle button").forEach((x) => x.classList.remove("selected"));
-      b.classList.add("selected");
-      App.scope = b.dataset.scope;
-      // "Edit friends" only makes sense while looking at the Friends
-      // scope — keep it hidden the rest of the time instead of always
-      // showing it.
-      $("#btn-edit-friends").style.display = App.scope === "friends" ? "" : "none";
-      renderMapPins();
-    });
+  $all(".scope-toggle button").forEach((b) => {
+    b.addEventListener("click", () => setScope(b.dataset.scope));
   });
 
-  $("#btn-edit-friends").addEventListener("click", openFriendsModal);
+  $("#btn-back-to-groups").addEventListener("click", closeGroupMap);
+  $("#btn-invite-to-group").addEventListener("click", () => {
+    if (App.currentGroupId) openInviteModal(App.currentGroupId);
+  });
 
   $("#btn-locate-me").addEventListener("click", () => {
     if (!App.me || !App.me.pos) { toast("Still finding your location…"); return; }
@@ -698,9 +794,15 @@ function wireMap() {
     if (!q) { box.classList.remove("show"); box.innerHTML = ""; return; }
     const all = await Store.allUsers();
     const blocked = await Store.getBlocked(App.me.id);
-    const results = all.filter(
-      (u) => u.id !== App.me.id && isPinVisible(u) && !blocked.includes(u.id) && u.name.toLowerCase().includes(q)
-    );
+    let candidates = all.filter((u) => u.id !== App.me.id && !blocked.includes(u.id));
+    if (App.currentGroupId) {
+      const group = await Store.getGroup(App.currentGroupId);
+      const memberIds = group ? group.memberIds : [];
+      candidates = candidates.filter((u) => memberIds.includes(u.id));
+    } else {
+      candidates = candidates.filter((u) => (u.mode || "everyone") === "everyone");
+    }
+    const results = candidates.filter((u) => isPinVisible(u) && u.name.toLowerCase().includes(q));
     box.innerHTML = results.length
       ? results.map((u) => `
         <div class="search-row" data-id="${u.id}">
@@ -1093,11 +1195,21 @@ async function renderMapPins() {
   const canvas = $("#map-canvas");
   const all = await Store.allUsers();
   const blocked = await Store.getBlocked(App.me.id);
-  const friends = await Store.getFriends(App.me.id);
 
   let visible = all.filter((u) => !blocked.includes(u.id));
-  if (App.scope === "friends") {
-    visible = visible.filter((u) => u.id === App.me.id || friends.includes(u.id));
+
+  if (App.currentGroupId) {
+    // A specific group's map — Friends only mode. Only that group's
+    // members are ever shown here, regardless of anyone's Everyone/Friends
+    // only toggle: being in the group is what grants visibility.
+    const group = await Store.getGroup(App.currentGroupId);
+    const memberIds = group ? group.memberIds : [App.me.id];
+    visible = visible.filter((u) => memberIds.includes(u.id));
+  } else {
+    // The shared Everyone map. Anyone who has switched into Friends only
+    // mode vanishes from here — their pin only shows up inside the maps of
+    // the groups they belong to (see the branch above).
+    visible = visible.filter((u) => u.id === App.me.id || (u.mode || "everyone") === "everyone");
   }
   // ensure "me" (latest live doc) is represented
   visible = visible.filter((u) => u.id !== App.me.id);
@@ -1421,7 +1533,8 @@ function spawnHeart(fromPos) {
   const canvas = $("#map-canvas");
   const h = document.createElement("div");
   h.className = "heart-pop";
-  h.textContent = "💗";
+  h.innerHTML = '<svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M12 21s-7.5-4.9-10.2-9.3C.1 8.7 1.4 5 5 4.2c2.1-.5 4 .5 5 2.3 1-1.8 2.9-2.8 5-2.3 3.6.8 4.9 4.5 3.2 7.5C19.5 16.1 12 21 12 21z"/></svg>';
+  h.style.color = "var(--rose, #d1495b)";
   h.style.left = fromPos.x * 100 + "%";
   h.style.top = fromPos.y * 100 + "%";
   canvas.appendChild(h);
@@ -1476,7 +1589,7 @@ function startActivitySimulation() {
     if (!others.length) return;
     const actor = others[Math.floor(Math.random() * others.length)];
     const sampleLines = [
-      "hey! saw you near the lawn 👋", "what's up!", "library later?",
+      "hey! saw you near the lawn", "what's up!", "library later?",
       "nice fit today", "nice to see you here", "class at 2?", "come to the canteen",
     ];
     if (Math.random() > 0.5) {
@@ -1526,15 +1639,27 @@ function moveNavPill() {
 async function switchTab(tab) {
   App.activeTab = tab;
   $all("#bottom-nav button").forEach((b) => b.classList.toggle("active", b.dataset.tab === tab));
-  goTo("screen-" + tab); // also repositions the active-tab glass pill, see goTo()
   if (tab === "map") {
-    // Force a fresh size/clamp on every return to the map, not just
-    // renderMapPins() — self-heals even if something odd happened to
-    // MapView's dimensions while this tab was hidden (see the guard in
-    // _sizeCanvas for the actual root-cause fix).
-    if (MapView.el) { MapView._sizeCanvas(); MapView._clampAndApply(); }
-    renderMapPins();
-    flushPendingMapActivity();
+    if (App.scope === "friends") {
+      // The Map tab means "wherever this mode's map lives" — for Friends
+      // only mode that's the groups list, not a group's map, even if one
+      // happened to be open before switching tabs away.
+      App.currentGroupId = null;
+      hideGroupMapChrome();
+      goTo("screen-groups");
+      renderGroupsList();
+    } else {
+      goTo("screen-map");
+      // Force a fresh size/clamp on every return to the map, not just
+      // renderMapPins() — self-heals even if something odd happened to
+      // MapView's dimensions while this tab was hidden (see the guard in
+      // _sizeCanvas for the actual root-cause fix).
+      if (MapView.el) { MapView._sizeCanvas(); MapView._clampAndApply(); }
+      renderMapPins();
+      flushPendingMapActivity();
+    }
+  } else {
+    goTo("screen-" + tab); // also repositions the active-tab glass pill, see goTo()
   }
   if (tab === "comments") { await Store.markTabSeen("comments"); renderCommentsList(); }
   if (tab === "likes") { await Store.markTabSeen("likes"); renderLikesList(); }
@@ -1643,7 +1768,10 @@ async function renderLikesList(jumpToLatest) {
 function renderActivityList(containerSel, items, usersById, kind) {
   const container = $(containerSel);
   if (!items.length) {
-    container.innerHTML = `<div class="empty-state"><div class="e">${kind === "comment" ? "💬" : "🤍"}</div>No ${kind}s yet.</div>`;
+    const icon = kind === "comment"
+      ? '<svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z"/></svg>'
+      : '<svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M20.8 4.6a5.5 5.5 0 00-7.8 0L12 5.6l-1-1a5.5 5.5 0 00-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 000-7.8z"/></svg>';
+    container.innerHTML = `<div class="empty-state"><div class="e">${icon}</div>No ${kind}s yet.</div>`;
     return;
   }
   let lastMonth = null;
@@ -1662,7 +1790,7 @@ function renderActivityList(containerSel, items, usersById, kind) {
         <div class="av">${avatarHTML(other)}</div>
         <div class="body">
           <div class="top"><span class="name">${other.name}</span><span class="time">${timeAgo(item.ts)} · ${fmtDate(item.ts)}</span></div>
-          <div class="text ${kind === "like" ? "like" : ""}">${kind === "like" ? "💗 " : ""}${label}</div>
+          <div class="text ${kind === "like" ? "like" : ""}">${label}</div>
         </div>
       </div>`;
   });
@@ -1845,7 +1973,7 @@ async function openBlockedModal() {
         <div class="name">${u.name}</div>
         <button data-id="${u.id}">Unblock</button>
       </div>`).join("")
-    : `<div class="empty-state"><div class="e">🚫</div>No blocked users.</div>`;
+    : `<div class="empty-state"><div class="e"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><path d="M5.6 5.6l12.8 12.8"/></svg></div>No blocked users.</div>`;
   $all("#blocked-list button").forEach((b) =>
     b.addEventListener("click", async () => {
       await Store.toggleBlock(App.me.id, b.dataset.id);
@@ -1929,7 +2057,7 @@ async function openOtherProfile(userId) {
   const friends = await Store.getFriends(App.me.id);
   const isFriend = friends.includes(u.id);
   const friendBtn = $("#op-friend-btn");
-  friendBtn.textContent = isFriend ? "✓ Friends" : "+ Add friend";
+  friendBtn.textContent = isFriend ? "Friends" : "+ Add friend";
   friendBtn.onclick = async () => {
     await Store.toggleFriend(App.me.id, u.id);
     openOtherProfile(u.id);
@@ -1952,36 +2080,187 @@ async function openOtherProfile(userId) {
    MODALS
    ====================================================================== */
 function wireModals() {
-  $("#friends-modal-close").addEventListener("click", () => closeModal("friends"));
-  $("#friends-modal-backdrop").addEventListener("click", () => closeModal("friends"));
   $("#edit-modal-close").addEventListener("click", () => closeModal("edit"));
   $("#edit-modal-backdrop").addEventListener("click", () => closeModal("edit"));
   $("#blocked-modal-close").addEventListener("click", () => closeModal("blocked"));
   $("#blocked-modal-backdrop").addEventListener("click", () => closeModal("blocked"));
-  $("#friends-search").addEventListener("input", renderFriendsList);
+  $("#creategroup-modal-close").addEventListener("click", () => closeModal("creategroup"));
+  $("#creategroup-modal-backdrop").addEventListener("click", () => closeModal("creategroup"));
+  $("#invite-modal-close").addEventListener("click", () => closeModal("invite"));
+  $("#invite-modal-backdrop").addEventListener("click", () => closeModal("invite"));
+  $("#inbox-modal-close").addEventListener("click", () => closeModal("inbox"));
+  $("#inbox-modal-backdrop").addEventListener("click", () => closeModal("inbox"));
+  $("#invite-search").addEventListener("input", () => renderInviteList(App._inviteModalGroupId));
 }
 function openModal(name) { show($("#" + name + "-modal-backdrop")); show($("#" + name + "-modal")); }
 function closeModal(name) { hide($("#" + name + "-modal-backdrop")); hide($("#" + name + "-modal")); }
 
-async function openFriendsModal() {
-  await renderFriendsList();
-  openModal("friends");
+/* ======================================================================
+   GROUPS — Friends only mode
+   ====================================================================== */
+function wireGroups() {
+  $("#btn-new-group").addEventListener("click", openCreateGroupModal);
+  $("#btn-inbox").addEventListener("click", openInboxModal);
+
+  $("#btn-create-group-submit").addEventListener("click", async () => {
+    const nameInput = $("#input-group-name");
+    const name = nameInput.value.trim();
+    if (!name) { toast("Give your group a name"); return; }
+    const btn = $("#btn-create-group-submit");
+    btn.disabled = true;
+    btn.textContent = "Creating…";
+    try {
+      const group = await Store.createGroup(App.me.id, name);
+      nameInput.value = "";
+      closeModal("creategroup");
+      renderGroupsList();
+      toast("Group created");
+      // Straight into inviting people — creating an empty group on its own
+      // isn't useful, so the natural next step is offered immediately.
+      openInviteModal(group.id);
+    } catch (err) {
+      console.error("Create group failed:", err);
+      toast("Couldn't create that group — try again.");
+    } finally {
+      btn.disabled = false;
+      btn.textContent = "Create group";
+    }
+  });
 }
-async function renderFriendsList() {
-  const q = $("#friends-search").value.trim().toLowerCase();
-  const all = (await Store.allUsers()).filter((u) => u.id !== App.me.id && (!q || u.name.toLowerCase().includes(q)));
-  const friends = await Store.getFriends(App.me.id);
-  $("#friends-list").innerHTML = all.map((u) => `
-    <div class="friend-row">
-      <div class="av">${avatarHTML(u)}</div>
-      <div class="meta"><div class="n">${u.name} ${u.active ? '<span style="color:var(--success);font-weight:700;font-size:10.5px;">● Active</span>' : ""}</div><div class="s">@${u.username} · ${(u.branch||"").split(" - ").pop()}</div></div>
-      <button data-id="${u.id}" class="${friends.includes(u.id) ? "added" : ""}">${friends.includes(u.id) ? "Added" : "Add"}</button>
-    </div>`).join("") || `<div class="empty-state"><div class="e">🔍</div>No students found.</div>`;
-  $all("#friends-list button").forEach((b) =>
+
+async function openCreateGroupModal() {
+  $("#input-group-name").value = "";
+  openModal("creategroup");
+  $("#input-group-name").focus();
+}
+
+async function renderGroupsList() {
+  if (!App.me) return;
+  const groups = await Store.getMyGroups(App.me.id);
+  const wrap = $("#groups-list");
+  if (!groups.length) {
+    wrap.innerHTML = `<div class="empty-state"><div class="e"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="9" cy="8" r="3.2"/><path d="M2.5 20c.6-3.6 3.3-6 6.5-6s5.9 2.4 6.5 6"/><circle cx="17.5" cy="9" r="2.6"/><path d="M15.3 14.3c2.6.3 4.6 2.4 5.2 5.7"/></svg></div>No groups yet. Create one to share your location with just your friends.</div>`;
+    return;
+  }
+  wrap.innerHTML = groups.map((g) => `
+    <div class="group-row" data-id="${g.id}">
+      <div class="group-av">${initials(g.name)}</div>
+      <div class="meta"><div class="n">${g.name}</div><div class="s">${g.memberIds.length} member${g.memberIds.length === 1 ? "" : "s"}</div></div>
+      <button class="row-invite-btn" data-id="${g.id}">Invite</button>
+    </div>`).join("");
+  $all(".group-row", wrap).forEach((row) => {
+    row.addEventListener("click", (e) => {
+      if (e.target.closest(".row-invite-btn")) return;
+      openGroupMap(row.dataset.id);
+    });
+  });
+  $all(".row-invite-btn", wrap).forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      openInviteModal(btn.dataset.id);
+    });
+  });
+}
+
+/** Generic "invite people to this group" modal — used both right after
+ *  creating a group and from a group row's Invite button. Anyone signed
+ *  into the app can be invited, per spec; sending is immediate per row
+ *  (no separate confirm step) and the row flips to "Invited" right away. */
+async function openInviteModal(groupId) {
+  App._inviteModalGroupId = groupId;
+  const group = await Store.getGroup(groupId);
+  $("#invite-modal-title").textContent = group ? `Invite to ${group.name}` : "Invite people";
+  $("#invite-search").value = "";
+  await renderInviteList(groupId);
+  openModal("invite");
+}
+
+async function renderInviteList(groupId) {
+  if (!groupId) return;
+  const q = $("#invite-search").value.trim().toLowerCase();
+  const group = await Store.getGroup(groupId);
+  const memberIds = group ? group.memberIds : [];
+  const all = (await Store.allUsers()).filter(
+    (u) => u.id !== App.me.id && !memberIds.includes(u.id) && (!q || u.name.toLowerCase().includes(q))
+  );
+  const wrap = $("#invite-list");
+  wrap.innerHTML = all.length
+    ? all.map((u) => `
+      <div class="friend-row">
+        <div class="av">${avatarHTML(u)}</div>
+        <div class="meta"><div class="n">${u.name}</div><div class="s">@${u.username} · ${(u.branch || "").split(" - ").pop()}</div></div>
+        <button data-id="${u.id}">Invite</button>
+      </div>`).join("")
+    : `<div class="empty-state"><div class="e"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg></div>No students found.</div>`;
+  $all("#invite-list button").forEach((b) =>
     b.addEventListener("click", async () => {
-      await Store.toggleFriend(App.me.id, b.dataset.id);
-      renderFriendsList();
-      renderMapPins();
+      b.disabled = true;
+      const originalLabel = b.textContent;
+      b.textContent = "Sending…";
+      try {
+        await Store.inviteToGroup(groupId, App.me.id, b.dataset.id);
+        b.textContent = "Invited";
+        b.classList.add("added");
+      } catch (err) {
+        console.error("Invite failed:", err);
+        toast("Couldn't send that invite — try again.");
+        b.disabled = false;
+        b.textContent = originalLabel;
+      }
     })
   );
+}
+
+async function openInboxModal() {
+  await renderInboxList();
+  openModal("inbox");
+}
+
+async function renderInboxList() {
+  if (!App.me) return;
+  const invites = await Store.getMyInvites(App.me.id);
+  const all = await Store.allUsers();
+  const usersById = {};
+  all.forEach((u) => { usersById[u.id] = u; });
+  const wrap = $("#inbox-list");
+  wrap.innerHTML = invites.length
+    ? invites.map((inv) => {
+        const from = usersById[inv.fromId];
+        return `
+        <div class="friend-row" data-id="${inv.id}">
+          <div class="av">${from ? avatarHTML(from) : ""}</div>
+          <div class="meta"><div class="n">${inv.groupName || "Group"}</div><div class="s">Invited by ${from ? from.name : "someone"}</div></div>
+          <div style="display:flex; gap:6px;">
+            <button data-id="${inv.id}" data-action="accept">Accept</button>
+            <button data-id="${inv.id}" data-action="decline" style="background:none;">Decline</button>
+          </div>
+        </div>`;
+      }).join("")
+    : `<div class="empty-state"><div class="e"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 6h18v13H3z"/><path d="M3 6l9 8 9-8"/></svg></div>No invitations right now.</div>`;
+  $all("#inbox-list button").forEach((b) =>
+    b.addEventListener("click", async () => {
+      const accept = b.dataset.action === "accept";
+      b.disabled = true;
+      try {
+        await Store.respondToInvite(b.dataset.id, accept);
+        await renderInboxList();
+        renderInboxBadge();
+        renderGroupsList();
+        toast(accept ? "Joined group" : "Invitation declined");
+      } catch (err) {
+        console.error("Respond to invite failed:", err);
+        toast("Couldn't update that invitation — try again.");
+        b.disabled = false;
+      }
+    })
+  );
+}
+
+async function renderInboxBadge() {
+  if (!App.me) return;
+  try {
+    const invites = await Store.getMyInvites(App.me.id);
+    const dot = $("#dot-inbox");
+    if (dot) dot.classList.toggle("show", invites.length > 0);
+  } catch (err) { console.error("renderInboxBadge failed:", err); }
 }

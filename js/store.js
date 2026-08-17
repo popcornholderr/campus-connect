@@ -56,6 +56,7 @@ function seedDemoStudents() {
       pos: spots[i],
       active: i % 3 !== 0, // most are "active"
       lastSeen: Date.now() - i * 60000,
+      mode: "everyone",
     };
   });
 }
@@ -63,7 +64,16 @@ function seedDemoStudents() {
 const Store = {
   _read() {
     const raw = localStorage.getItem(DB_KEY);
-    if (raw) return JSON.parse(raw);
+    if (raw) {
+      const db = JSON.parse(raw);
+      // Backfill fields added after some browsers already had a saved DB —
+      // without this, an older cached DB would crash the new groups/mode
+      // code with "undefined is not an object".
+      if (!db.groups) db.groups = {};
+      if (!db.invites) db.invites = {};
+      Object.values(db.users || {}).forEach((u) => { if (!u.mode) u.mode = "everyone"; });
+      return db;
+    }
     const fresh = {
       currentUserId: null,
       users: {}, // id -> profile
@@ -72,6 +82,8 @@ const Store = {
       comments: [], // {id, fromId, toId, text, ts}
       likes: [], // {id, fromId, toId, ts}
       seenTabs: { map: true, comments: true, likes: true }, // true = no red dot
+      groups: {}, // id -> {id, name, ownerId, memberIds:[...], createdAt}
+      invites: {}, // id -> {id, groupId, groupName, fromId, toId, status, createdAt}
     };
     seedDemoStudents().forEach((s) => (fresh.users[s.id] = s));
     localStorage.setItem(DB_KEY, JSON.stringify(fresh));
@@ -133,6 +145,64 @@ const Store = {
       if (active) db.users[id].lastSeen = Date.now();
       this._write(db);
     }
+  },
+
+  /** Switches a user between Everyone mode and Friends only mode — see the
+   *  matching comment in store.supabase.js for what this drives. */
+  async setMode(userId, mode) {
+    const db = this._read();
+    if (db.users[userId]) {
+      db.users[userId].mode = mode;
+      this._write(db);
+    }
+  },
+
+  /* ---------------------------------------------------------------- groups */
+  async createGroup(ownerId, name) {
+    const db = this._read();
+    const id = "g-" + Date.now() + Math.random().toString(16).slice(2);
+    const group = { id, name, ownerId, memberIds: [ownerId], createdAt: Date.now() };
+    db.groups[id] = group;
+    this._write(db);
+    return group;
+  },
+  async getMyGroups(userId) {
+    const db = this._read();
+    return Object.values(db.groups).filter((g) => g.memberIds.includes(userId));
+  },
+  async getGroup(groupId) {
+    const db = this._read();
+    return db.groups[groupId] || null;
+  },
+  async inviteToGroup(groupId, fromId, toId) {
+    const db = this._read();
+    const already = Object.values(db.invites).find(
+      (i) => i.groupId === groupId && i.toId === toId && i.status === "pending"
+    );
+    if (already) return already;
+    const group = db.groups[groupId];
+    const id = "inv-" + Date.now() + Math.random().toString(16).slice(2);
+    const invite = { id, groupId, groupName: group ? group.name : "", fromId, toId, status: "pending", createdAt: Date.now() };
+    db.invites[id] = invite;
+    this._write(db);
+    return invite;
+  },
+  async getMyInvites(userId) {
+    const db = this._read();
+    return Object.values(db.invites)
+      .filter((i) => i.toId === userId && i.status === "pending")
+      .sort((a, b) => b.createdAt - a.createdAt);
+  },
+  async respondToInvite(inviteId, accept) {
+    const db = this._read();
+    const invite = db.invites[inviteId];
+    if (!invite) return;
+    invite.status = accept ? "accepted" : "declined";
+    if (accept) {
+      const group = db.groups[invite.groupId];
+      if (group && !group.memberIds.includes(invite.toId)) group.memberIds.push(invite.toId);
+    }
+    this._write(db);
   },
 
   async toggleFriend(userId, targetId) {
@@ -218,7 +288,7 @@ const Auth = {
         name: "", username: "", photo: null, age: "", branch: BRANCHES[0],
         semester: 1, placeType: "hostel", place: "", relationship: "",
         phone: "", social: "", pos: { x: 0.35, y: 0.55 }, active: true,
-        onboarded: false, lastSeen: Date.now(),
+        onboarded: false, lastSeen: Date.now(), mode: "everyone",
       };
       await Store.saveUser(user);
     }

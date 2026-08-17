@@ -49,7 +49,7 @@
 
       <div class="install-ios-steps" id="install-ios-steps" style="display:none;">
         <p class="eyebrow" style="margin-bottom:10px;">On iPhone / iPad</p>
-        <div class="ios-step"><span class="n">1</span><span>Tap the <b>Share</b> button <span class="share-glyph">⬆️</span> in Safari's toolbar</span></div>
+        <div class="ios-step"><span class="n">1</span><span>Tap the <b>Share</b> button <span class="share-glyph"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7 8l5-5 5 5M5 21h14"/></svg></span> in Safari's toolbar</span></div>
         <div class="ios-step"><span class="n">2</span><span>Scroll down and tap <b>Add to Home Screen</b></span></div>
         <div class="ios-step"><span class="n">3</span><span>Tap <b>Add</b>, then open Campus Connect from your home screen</span></div>
       </div>
@@ -152,7 +152,7 @@
   <!-- ================= SCREEN: GPS PERMISSION ================= -->
   <section class="screen" id="screen-gps">
     <div class="auth-wrap" style="align-items:center; text-align:center; justify-content:center;">
-      <div style="font-size:44px; margin-bottom:18px;">📍</div>
+      <div style="margin-bottom:18px;"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 21s-7-6.2-7-11.5A7 7 0 0112 2a7 7 0 017 7.5C19 14.8 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/></svg></div>
       <h2 class="auth-title" style="font-size:24px;">Turn on location</h2>
       <p class="auth-sub">Campus Connect only works with GPS on — it's how your pin shows up for classmates in real time. When the browser asks, choose <b>Allow</b> (or <b>Allow while visiting the site</b>) so this works every time you have the app open.</p>
       <button class="btn-primary" id="btn-enable-gps">Allow location access</button>
@@ -162,13 +162,17 @@
 
   <!-- ================= SCREEN: MAP (main) ================= -->
   <section class="screen" id="screen-map">
-    <div class="topbar">
+    <div class="topbar" id="map-topbar">
       <div class="brand-mark"><span class="cc-logo">CC<span class="dot"></span></span></div>
       <div class="scope-toggle glass" id="scope-toggle">
         <button data-scope="everyone" class="selected">Everyone</button>
-        <button data-scope="friends">Friends</button>
+        <button data-scope="friends">Friends only</button>
       </div>
-      <button class="btn-text" id="btn-edit-friends" style="text-decoration:none; display:none;">Edit friends</button>
+      <div class="group-map-bar" id="group-map-bar">
+        <button class="btn-text" id="btn-back-to-groups" style="text-decoration:none;">‹ Groups</button>
+        <span class="group-map-title" id="group-map-title"></span>
+        <button class="btn-text" id="btn-invite-to-group" style="text-decoration:none;">Invite</button>
+      </div>
     </div>
     <div class="searchbar glass">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><circle cx="11" cy="11" r="7" stroke="#a6a4ac" stroke-width="2"/><path d="M21 21l-4.3-4.3" stroke="#a6a4ac" stroke-width="2" stroke-linecap="round"/></svg>
@@ -178,11 +182,11 @@
 
     <div class="map-wrap">
       <div class="geo-banner glass-dark" id="geo-loading">
-        <span>📡</span>
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="2.5"/><path d="M12 3v3M12 18v3M21 12h-3M6 12H3"/></svg>
         <b>Locating you…</b>
       </div>
       <div class="oob-screen" id="oob-screen">
-        <div class="icon">🧭</div>
+        <div class="icon"><svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><path d="M15 9l-2 6-4-1.5L11 7l4 2z"/></svg></div>
         <h3 style="font-size:19px; margin-bottom:8px;">You're outside campus range</h3>
         <p class="auth-sub">Campus Connect only works within Darshan University campus. Come back within the mapped area to keep using the app.</p>
       </div>
@@ -200,6 +204,33 @@
       </button>
       <div class="info-card-backdrop" id="info-backdrop"></div>
     </div>
+  </section>
+
+  <!-- ================= SCREEN: GROUPS (Friends only mode landing) ================= -->
+  <section class="screen" id="screen-groups">
+    <div class="topbar">
+      <div class="brand-mark"><span class="cc-logo">CC<span class="dot"></span></span></div>
+      <div class="scope-toggle glass" id="scope-toggle-groups">
+        <button data-scope="everyone">Everyone</button>
+        <button data-scope="friends" class="selected">Friends only</button>
+      </div>
+      <button class="btn-icon" id="btn-inbox" aria-label="Group invitations" title="Group invitations">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 6h18v13H3z"/><path d="M3 6l9 8 9-8"/></svg>
+        <span class="dot" id="dot-inbox"></span>
+      </button>
+    </div>
+    <div class="list-screen">
+      <div class="list-scroll-wrap">
+        <div class="list-scroll" id="groups-list-wrap">
+          <div id="groups-list"></div>
+        </div>
+      </div>
+    </div>
+    <button class="btn-locate-me" id="btn-new-group" aria-label="Create group" title="Create group">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 5v14M5 12h14"/>
+      </svg>
+    </button>
   </section>
 
   <!-- ================= SCREEN: COMMENTS ================= -->
@@ -309,27 +340,45 @@
     </button>
   </nav>
 
-  <!-- ================= EDIT FRIENDS MODAL ================= -->
-  <div class="modal-backdrop" id="friends-modal-backdrop"></div>
-  <div class="modal-sheet" id="friends-modal">
-    <div class="modal-head"><h3>Edit friends</h3><button id="friends-modal-close">✕</button></div>
+  <!-- ================= CREATE GROUP MODAL ================= -->
+  <div class="modal-backdrop" id="creategroup-modal-backdrop"></div>
+  <div class="modal-sheet" id="creategroup-modal">
+    <div class="modal-head"><h3>New group</h3><button id="creategroup-modal-close"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M5 5l14 14M19 5L5 19"/></svg></button></div>
     <div class="modal-body">
-      <div class="searchbar" style="margin:0 0 12px;"><input id="friends-search" placeholder="Search everyone on the app…" /></div>
-      <div id="friends-list"></div>
+      <div class="field"><label>Group name</label><input id="input-group-name" placeholder="e.g. Hostel Squad" maxlength="40" /></div>
+      <button class="btn-primary" id="btn-create-group-submit" style="margin-top:8px;">Create group</button>
     </div>
+  </div>
+
+  <!-- ================= INVITE PEOPLE MODAL (used both right after creating a
+       group, and from the Invite button on an existing group) ================= -->
+  <div class="modal-backdrop" id="invite-modal-backdrop"></div>
+  <div class="modal-sheet" id="invite-modal">
+    <div class="modal-head"><h3 id="invite-modal-title">Invite people</h3><button id="invite-modal-close"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M5 5l14 14M19 5L5 19"/></svg></button></div>
+    <div class="modal-body">
+      <div class="searchbar" style="margin:0 0 12px;"><input id="invite-search" placeholder="Search people to invite…" /></div>
+      <div id="invite-list"></div>
+    </div>
+  </div>
+
+  <!-- ================= INBOX MODAL (group invitations) ================= -->
+  <div class="modal-backdrop" id="inbox-modal-backdrop"></div>
+  <div class="modal-sheet" id="inbox-modal">
+    <div class="modal-head"><h3>Group invitations</h3><button id="inbox-modal-close"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M5 5l14 14M19 5L5 19"/></svg></button></div>
+    <div class="modal-body" id="inbox-list"></div>
   </div>
 
   <!-- ================= EDIT PROFILE MODAL ================= -->
   <div class="modal-backdrop" id="edit-modal-backdrop"></div>
   <div class="modal-sheet" id="edit-modal">
-    <div class="modal-head"><h3>Edit profile</h3><button id="edit-modal-close">✕</button></div>
+    <div class="modal-head"><h3>Edit profile</h3><button id="edit-modal-close"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M5 5l14 14M19 5L5 19"/></svg></button></div>
     <div class="modal-body" id="edit-modal-body"></div>
   </div>
 
   <!-- ================= BLOCKED LIST MODAL ================= -->
   <div class="modal-backdrop" id="blocked-modal-backdrop"></div>
   <div class="modal-sheet" id="blocked-modal">
-    <div class="modal-head"><h3>Blocked users</h3><button id="blocked-modal-close">✕</button></div>
+    <div class="modal-head"><h3>Blocked users</h3><button id="blocked-modal-close"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M5 5l14 14M19 5L5 19"/></svg></button></div>
     <div class="modal-body" id="blocked-list"></div>
   </div>
 

@@ -165,10 +165,10 @@
     <div class="topbar">
       <div class="brand-mark"><span class="cc-logo">CC<span class="dot"></span></span></div>
       <div class="scope-toggle glass" id="scope-toggle">
-        <button data-scope="everyone" class="selected">Everyone</button>
-        <button data-scope="friends">Friends</button>
+        <button data-scope="everyone" class="selected" id="btn-scope-everyone">Everyone</button>
+        <button data-scope="groups" id="btn-groups-scope">Groups</button>
       </div>
-      <button class="btn-text" id="btn-edit-friends" style="text-decoration:none; display:none;">Edit friends</button>
+      <button class="btn-text" id="btn-manage-group" style="text-decoration:none; display:none;">Manage</button>
     </div>
     <div class="searchbar glass">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><circle cx="11" cy="11" r="7" stroke="#a6a4ac" stroke-width="2"/><path d="M21 21l-4.3-4.3" stroke="#a6a4ac" stroke-width="2" stroke-linecap="round"/></svg>
@@ -185,6 +185,17 @@
         <div class="icon">🧭</div>
         <h3 style="font-size:19px; margin-bottom:8px;">You're outside campus range</h3>
         <p class="auth-sub">Campus Connect only works within Darshan University campus. Come back within the mapped area to keep using the app.</p>
+      </div>
+      <!-- "Everyone" is opt-in — this covers the map instead of showing
+           anyone's pin until the person explicitly agrees to be visible to
+           every other student on the app, not just their group(s). See
+           renderMapPins()/App.scope handling in app.js. -->
+      <div class="oob-screen" id="everyone-gate">
+        <div class="icon">🌐</div>
+        <h3 style="font-size:19px; margin-bottom:8px;">Start Everyone-ing?</h3>
+        <p class="auth-sub">Turning this on makes your pin visible to every student using Campus Connect — not just people in your groups. You can turn it off again anytime from your profile.</p>
+        <button class="btn-primary" id="btn-start-everyoneing" style="margin-top:8px;">Start Everyone-ing</button>
+        <button class="btn-text" id="btn-everyone-gate-back" style="margin-top:14px;">Not now — go to my groups</button>
       </div>
       <div class="map-scroll" id="map-scroll">
         <div class="map-canvas" id="map-canvas">
@@ -263,6 +274,8 @@
       <div class="section-title">Account</div>
       <button class="row-btn" id="btn-edit-profile">Edit profile<span class="sub">Photo, name, branch, semester &amp; more</span></button>
       <button class="row-btn" id="btn-blocked-list">Blocked users<span class="sub" id="blocked-count-sub">Manage who can't see or contact you</span></button>
+      <div class="section-title">Visibility</div>
+      <button class="row-btn" id="btn-toggle-everyone">Everyone mode<span class="sub" id="everyone-mode-sub">Off — only your groups can see you</span></button>
       <div class="section-title">About</div>
       <button class="row-btn danger" id="btn-logout">Log out</button>
     </div>
@@ -316,6 +329,43 @@
     <div class="modal-body">
       <div class="searchbar" style="margin:0 0 12px;"><input id="friends-search" placeholder="Search everyone on the app…" /></div>
       <div id="friends-list"></div>
+    </div>
+  </div>
+
+  <!-- ================= GROUPS MODAL ================= -->
+  <!-- Replaces the old "Friends" map-visibility scope: pick which group's
+       members you want to see on the map, respond to invites, or start a
+       new group. See openGroupsModal()/renderGroupsModal() in app.js. -->
+  <div class="modal-backdrop" id="groups-modal-backdrop"></div>
+  <div class="modal-sheet" id="groups-modal">
+    <div class="modal-head"><h3>Groups</h3><button id="groups-modal-close">✕</button></div>
+    <div class="modal-body">
+      <div id="group-invites-section" style="display:none;">
+        <div class="section-title" style="margin-top:0;">Invites</div>
+        <div id="group-invites-list"></div>
+      </div>
+      <div class="section-title" style="margin-top:0;">New group</div>
+      <div style="display:flex; gap:8px; margin-bottom:18px;">
+        <input id="new-group-name" placeholder="Group name" style="flex:1; border:1px solid var(--line); background:var(--surface); border-radius:var(--radius-s); padding:11px 13px; font-size:13.5px; font-family:var(--font-body); color:var(--ink);" maxlength="40" />
+        <button class="btn-primary" id="btn-create-group" style="width:auto; margin:0; padding:11px 18px; font-size:13px;">Create</button>
+      </div>
+      <div class="section-title">Your groups</div>
+      <div id="my-groups-list"></div>
+    </div>
+  </div>
+
+  <!-- ================= GROUP DETAIL MODAL ================= -->
+  <div class="modal-backdrop" id="group-detail-modal-backdrop"></div>
+  <div class="modal-sheet" id="group-detail-modal">
+    <div class="modal-head"><h3 id="group-detail-name">Group</h3><button id="group-detail-modal-close">✕</button></div>
+    <div class="modal-body">
+      <div id="group-invite-section" style="display:none;">
+        <div class="searchbar" style="margin:0 0 8px;"><input id="group-invite-search" placeholder="Invite someone by name…" /></div>
+        <div id="group-invite-results" style="margin-bottom:18px;"></div>
+      </div>
+      <div class="section-title" style="margin-top:0;">Members</div>
+      <div id="group-members-list"></div>
+      <button class="row-btn danger" id="btn-leave-group" style="margin-top:18px; text-align:center; display:none;">Leave group</button>
     </div>
   </div>
 

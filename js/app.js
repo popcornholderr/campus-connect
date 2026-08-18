@@ -270,6 +270,11 @@ const SCREENS_WITH_BOTTOM_NAV = new Set([
 function goTo(screenId) {
   $all(".screen").forEach((s) => s.classList.remove("active"));
   $("#" + screenId).classList.add("active");
+  // A modal left open from before (e.g. the person backgrounded the app,
+  // or a screen change happened programmatically) must never survive a
+  // navigation — otherwise it keeps floating over whatever screen loads
+  // next, and can visually stack with a second modal opened on top of it.
+  closeAllModals();
   const showNav = SCREENS_WITH_BOTTOM_NAV.has(screenId);
   $("#app-shell").classList.toggle("bottom-nav-visible", showNav);
   // Line the glass pill up as soon as the bar actually becomes visible —
@@ -2092,8 +2097,19 @@ function wireModals() {
   $("#inbox-modal-backdrop").addEventListener("click", () => closeModal("inbox"));
   $("#invite-search").addEventListener("input", () => renderInviteList(App._inviteModalGroupId));
 }
-function openModal(name) { show($("#" + name + "-modal-backdrop")); show($("#" + name + "-modal")); }
+function openModal(name) {
+  // Only one modal sheet should ever be visible at once — opening a new
+  // one first closes anything left open (see closeAllModals()'s doc
+  // comment for why a stray one can otherwise linger).
+  closeAllModals();
+  show($("#" + name + "-modal-backdrop"));
+  show($("#" + name + "-modal"));
+}
 function closeModal(name) { hide($("#" + name + "-modal-backdrop")); hide($("#" + name + "-modal")); }
+function closeAllModals() {
+  $all(".modal-sheet.show").forEach((el) => el.classList.remove("show"));
+  $all(".modal-backdrop.show").forEach((el) => el.classList.remove("show"));
+}
 
 /* ======================================================================
    GROUPS — Friends only mode

@@ -1968,8 +1968,14 @@ function openEditProfileModal() {
 }
 
 async function openBlockedModal() {
+  // Snapshot the token before the awaited fetches below. If modal state
+  // changes (another modal opens/closes, or navigation happens) while
+  // we're waiting on the network, modalToken will have moved on and we
+  // skip the stale openModal("blocked") call at the end.
+  const myModalToken = modalToken;
   const blockedIds = await Store.getBlocked(App.me.id);
   const all = await Store.allUsers();
+  if (myModalToken !== modalToken) return; // stale — something else changed modal state meanwhile
   const list = all.filter((u) => blockedIds.includes(u.id));
   $("#blocked-list").innerHTML = list.length
     ? list.map((u) => `
@@ -2097,16 +2103,24 @@ function wireModals() {
   $("#inbox-modal-backdrop").addEventListener("click", () => closeModal("inbox"));
   $("#invite-search").addEventListener("input", () => renderInviteList(App._inviteModalGroupId));
 }
+// Bumped on every modal state change (open/close/close-all). Async modal
+// openers (openBlockedModal/openInviteModal/openInboxModal) capture this
+// value before their awaited fetches and re-check it afterwards, so a
+// slow, now-stale fetch can't yank an old modal back open on top of
+// whatever the user has since navigated to or opened instead.
+let modalToken = 0;
 function openModal(name) {
   // Only one modal sheet should ever be visible at once — opening a new
   // one first closes anything left open (see closeAllModals()'s doc
   // comment for why a stray one can otherwise linger).
   closeAllModals();
+  modalToken++;
   show($("#" + name + "-modal-backdrop"));
   show($("#" + name + "-modal"));
 }
-function closeModal(name) { hide($("#" + name + "-modal-backdrop")); hide($("#" + name + "-modal")); }
+function closeModal(name) { modalToken++; hide($("#" + name + "-modal-backdrop")); hide($("#" + name + "-modal")); }
 function closeAllModals() {
+  modalToken++;
   $all(".modal-sheet.show").forEach((el) => el.classList.remove("show"));
   $all(".modal-backdrop.show").forEach((el) => el.classList.remove("show"));
 }
@@ -2183,11 +2197,14 @@ async function renderGroupsList() {
  *  into the app can be invited, per spec; sending is immediate per row
  *  (no separate confirm step) and the row flips to "Invited" right away. */
 async function openInviteModal(groupId) {
+  // Same stale-response guard as openBlockedModal — see its comment.
+  const myModalToken = modalToken;
   App._inviteModalGroupId = groupId;
   const group = await Store.getGroup(groupId);
   $("#invite-modal-title").textContent = group ? `Invite to ${group.name}` : "Invite people";
   $("#invite-search").value = "";
   await renderInviteList(groupId);
+  if (myModalToken !== modalToken) return; // stale — something else changed modal state meanwhile
   openModal("invite");
 }
 
@@ -2228,7 +2245,10 @@ async function renderInviteList(groupId) {
 }
 
 async function openInboxModal() {
+  // Same stale-response guard as openBlockedModal — see its comment.
+  const myModalToken = modalToken;
   await renderInboxList();
+  if (myModalToken !== modalToken) return; // stale — something else changed modal state meanwhile
   openModal("inbox");
 }
 

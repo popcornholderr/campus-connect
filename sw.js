@@ -17,7 +17,7 @@
 // everything into a fresh cache. Only a byte-for-byte change to THIS FILE
 // triggers that check, so a change to (say) app.js alone is invisible to
 // the update mechanism unless this version string also changes.
-const CACHE_NAME = "campus-connect-v4";
+const CACHE_NAME = "campus-connect-v3";
 const APP_SHELL = [
   "./",
   "./index.html",
